@@ -1,0 +1,15 @@
+# 一律 LF。Vite／Prettier／Node 工具都寫 LF，若讓 Windows 的 git 自動轉成 CRLF，
+# 工具下次存檔又寫回 LF —— diff 會整個檔案亮起來，真正的改動就被淹掉了。
+* text=auto eol=lf
+
+# 二進位素材不要做任何行尾轉換或 diff。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
