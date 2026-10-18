@@ -83,7 +83,9 @@ npm run build     # 型別檢查＋建置
 | 4 | **特效不得改變字寬類別**：亂碼要用同寬的字（`noiseChar(w)`）；`w:0` 右半格的位移要跟左半格一致 | `src/player/effects.ts` `noiseChar`、`wave`、`glitch` | 解碼／故障期間字疊在一起或裂成兩半，特效結束後又恢復，很難重現 |
 | 5 | **墨量量測與字形圖集共用同一支 `drawGlyph`** | `src/core/ink.ts` `canvasInkMeasure`、`src/player/renderer.ts` `Atlas.get` | 密度模式排出來的亮暗順序和畫面上看到的不一樣，圖變「髒」，看不出原因 |
 | 6 | **圖集的格寬必須等於 `draw()` 用的格寬**（都從 `canvas.width / cols` 算） | `src/player/renderer.ts` `fit`、`Atlas.reset` | 字微微被裁切或糊掉，在某些視窗大小才出現 |
-| 7 | **`core/` 只 import `core/`；`player/` 只 import `core/`、`player/`；兩者都不准有套件相依** | `src/core/**`、`src/player/**`；由 `tests/boundaries.test.ts` 把關 | 播放器整份內嵌進匯出檔時跟著帶進相依，匯出檔變肥、預覽與成品開始不一致 |
+| 7 | **`core/` 只 import `core/`；`player/` 只 import `core/`、`player/`；兩者都不准有套件相依**（`media/` 可以用套件，但 `core`／`player` 不得 import 它） | `src/core/**`、`src/player/**`；由 `tests/boundaries.test.ts` 把關 | 播放器整份內嵌進匯出檔時跟著帶進相依，匯出檔變肥、預覽與成品開始不一致 |
+| 8 | **同一個 `Clip` 的每一格 `cols × rows` 必須相同** | `src/core/grid.ts` `Clip`；`src/player/scene-player.ts` `tick`（換格只 `setGrid`、不重新 `fit`） | 尺寸不同的格子被畫進舊的畫布尺寸：字被裁掉或擠在角落，只在動圖播到那一格時出現 |
+| 9 | **GIF 匯出用同一個 `Renderer` 在畫面外逐格推進時間，不錄螢幕** | `src/media/gif-export.ts` `exportGif` | 改成錄螢幕會掉格、受視窗大小影響，匯出的 GIF 就和預覽不一致 |
 
 > **「保護哪個檔／符號」這一欄不要留白。** AI 犯「架構與既有慣例不一致」的錯，
 > 是在**讀程式碼**的時候犯的，不是在讀這一節的時候。填了這欄，它動那個檔之前
@@ -165,5 +167,17 @@ npm run build     # 型別檢查＋建置
 - （→ §8 驗證）`npm test`：字寬、轉換、特效、模組邊界共 32 項；部署 workflow（`.github/workflows/pages.yml`）測試沒過就不部署。瀏覽器端（繪製、拖放、手機版面）目前沒有自動化，靠人工或臨時腳本
 - （→ §0 檔案清單）`start.bat`：Windows 一鍵啟動（缺 `node_modules` 先 `npm install`，再 `npm start`）。必須是 CRLF，由 `.gitattributes` 的 `*.bat` 例外保證
 - （→ §8 驗證）`npm start` = `vite --open`；`npm run phone` = `vite --host --open`，讓同網路的手機連進來
+- （→ §0 檔案清單）`src/media/`：編輯器那一側的媒體讀寫，可以用套件。`gif-decode.ts`（`GifSource`、`GifComposer`、`isGif`）用 gifuct-js 解碼；`gif-export.ts`（`exportGif`、`suggestSeconds`）用 gifenc 編碼；`gifenc.d.ts` 補型別
+- （→ §0 檔案清單）`src/player/clip-frames.ts`：`ClipFrames` = Clip 的每一格各一個 `SceneFrames`，依時間挑格
+- （→ §3 資料契約）`Clip = { frames: Grid[], delays: number[] }`，`delays` 毫秒、播完循環；靜態圖用 `stillClip(grid)`（`delays: [Infinity]`）。`ScenePlayer.show` 收的是 Clip
+- （→ §4 模組契約）兩條時間軸：圖層動畫依 `clipIndexAt` 循環；進場特效從畫面開始算，**不會因為圖層換格而重播**
+- （→ §4 模組契約）GIF 讀取逐格解碼、用完即丟：欄數改變才重解一遍，只留每格的 `Sample`。最多取前 `GIF_MAX_FRAMES`（300）格；停留 ≤ 10 ms 當 100 ms（`normalizeDelay`，和瀏覽器一致）；用檔頭 `GIF8` 判斷，不信副檔名；只有一格或解析失敗就退回 `createImageBitmap` 當靜態圖
+- （→ §4 模組契約）`GifComposer`：上一格的 disposal 在下一格貼上**之前**才生效（2 = 清成透明、3 = 還原）；透明像素不覆蓋
+- （→ §4 模組契約）`exportGif`：畫面外的 `Renderer`（`readback: true`、dpr 1）依 `frameDelayMs(fps)`（對齊 1/100 秒）推進時間；全片共用一組 256 色調色盤，從最多 8 個時間點每 5 像素取樣；每 3 格讓出主執行緒一次
+- （→ §4 模組契約）`Renderer`：`setGrid` 只換內容不重排版；色圖依 Grid 用 WeakMap 快取；`fit(maxW, maxH, dpr)` 可指定 dpr
+- （→ §7 數值）`GIF_MAX_FRAMES`（`gif-decode.ts`）；`GIF_MAX_SECONDS`、`SUSTAIN_MIN_SECONDS`、`HOLD_SECONDS`（`gif-export.ts`）
+- （→ §8 驗證）`tests/gif.test.ts`：GIF 疊合規則、gifenc 編→解來回一致、Clip 時間軸、匯出時間設定。瀏覽器端的「上傳動圖 → 播放會動 → 匯出 GIF → 解回來檢查」目前靠臨時腳本
+- （→ §9 刻意沒做的事）GIF 匯出在主執行緒跑，不用 Web Worker —— 720 px、數十格約一秒內完成；要做長片或大尺寸再搬
+- （→ §9 刻意沒做的事）訊息填充模式的動圖：每一格都從句子開頭填起，字會隨亮處移動而流動，不追蹤「同一個字在哪」
 - （→ §9 刻意沒做的事）原圖色模式下，波浪／故障的位移不帶著顏色走（色圖固定在格子上）—— 位移不到一格，相鄰色相近，看不出來；要修得逐格上色，200 欄會掉幀
 - （→ §9 刻意沒做的事）輪廓只在密度模式生效 —— 描邊字元插進句子會破壞訊息填充模式的可讀性

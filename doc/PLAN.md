@@ -19,6 +19,7 @@
 | 版本 | 日期 | 變更 | 原因 |
 |---|---|---|---|
 | v0.1 | 2026-10-18 | 初版：技術方向、架構、M0～M5 排程、風險、驗收 | 構想討論定案（見 [devlog](devlog/2026-10-18.md)） |
+| v0.3 | 2026-10-18 | 「架構」加入 `src/media/`（GIF 讀寫，可用套件）；「技術方向結論」加 GIF 讀寫一列 | Chiao 試完 M1 的回饋：效果動起來最好，要能讀 GIF 動圖、輸出 GIF |
 | v0.2 | 2026-10-18 | 「架構」加入 `src/spike/`（M1 試作頁，原生 DOM）；「風險與應對」的播放器相依改由測試把關 | M1 開工：spike 頁不值得先拉 React；模組邊界改成每次測試自動檢查，不靠人記得 |
 
 ---
@@ -42,6 +43,7 @@
 | 圖片轉字元 | 在編輯器端轉好，存「字元格 ＋ 參數」 | 匯出檔不必帶原圖，也不必帶轉換程式 |
 | 匯出 | 播放器 JS ＋ 專案資料內嵌進 HTML 範本，用 `Blob` 下載 | 零伺服器。見 [決策](decisions/2026-10-18-純前端-匯出單一HTML.md) |
 | 存檔 | IndexedDB 自動存 ＋ 匯入／匯出 `.json` | 關掉分頁不會掉進度 |
+| GIF 讀寫（spike） | gifuct-js 解碼、gifenc 編碼，放 `src/media/` | 小、MIT、純 JS；不進播放器。見 [決策](decisions/2026-10-18-GIF讀寫用gifuct-js與gifenc-放在media.md) |
 
 ---
 
@@ -63,7 +65,8 @@ src/
   core/     共用：專案資料型別、字元格、圖片轉字元、字形量測   ← 零相依
   player/   播放器：繪製、特效、流程推進、輸入                ← 只能用 core
   editor/   編輯器：React ＋ React Flow、Scene 面板、存檔、匯出  ← 可用 core、player
-  spike/    M1 試作頁：拉桿調參數，原生 DOM                   ← 可用 core、player；M3 後移除
+  media/    媒體讀寫：GIF 解碼／編碼（可用套件）                ← 可用 core、player；core／player 不得 import 它
+  spike/    M1 試作頁：拉桿調參數，原生 DOM                   ← 可用 core、player、media；M3 後移除
 ```
 
 資料流向是單向的：`editor` 產生專案資料 → `player` 讀專案資料播放。
