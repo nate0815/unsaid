@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "start": "vite --open",
+    "phone": "vite --host --open",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",

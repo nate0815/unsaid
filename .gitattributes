@@ -2,6 +2,10 @@
 # 工具下次存檔又寫回 LF —— diff 會整個檔案亮起來，真正的改動就被淹掉了。
 * text=auto eol=lf
 
+# 例外：Windows 批次檔一定要 CRLF。cmd.exe 讀 LF 的 .bat 會在標籤與跳行附近解析錯亂，
+# 而且錯法是「某幾行被跳過」，不會報錯。
+*.bat text eol=crlf
+
 # 二進位素材不要做任何行尾轉換或 diff。
 *.png binary
 *.jpg binary

@@ -11,12 +11,19 @@
 
 需要 Node.js 22 以上。
 
+**Windows：雙擊根目錄的 `start.bat`。** 第一次會先安裝套件（要網路），之後瀏覽器會自動打開。關掉那個黑色視窗就停止。
+
+或用終端機：
+
 ```bash
 npm install
-npm run dev
+npm start          # 等同 npm run dev，但會自動開瀏覽器
 ```
 
-用瀏覽器打開它印出的網址（通常是 `http://localhost:5173/`），看到一顆由「有些話我一直沒有說出口……」這句話填成的心，就是跑起來了。
+看到一顆由「有些話我一直沒有說出口……」這句話填成的心，就是跑起來了（網址通常是 `http://localhost:5173/`）。
+
+**用手機看**：`npm run phone`，手機連同一個 Wi-Fi，打開它印出的 `Network:` 那個網址。
+這會讓同一個網路裡的其他裝置也連得到，用完記得關掉。
 把自己的圖拖進畫面，或用左邊的拉桿調參數。
 
 推到 `main` 會自動測試、建置並部署到 GitHub Pages（`.github/workflows/pages.yml`）。

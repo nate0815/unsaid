@@ -163,5 +163,7 @@ npm run build     # 型別檢查＋建置
 - （→ §4 模組契約）`Renderer` 每幀：圖集貼白字到字形層 → `source-in` 一次上色（單色填色／原圖色貼每格一像素的色圖）→ 主畫布填背景再疊上
 - （→ §7 數值）可調值的宣告處：`COLS_MIN/MAX`（`convert.ts`）、`FONT_SCALE`（`glyph.ts`）、特效時長與振幅（`effects.ts` 的 `typewriterDur`、`decodeDur`、`wave`、`glitch`）、spike 預設值（`spike/main.ts` `DEFAULTS`）
 - （→ §8 驗證）`npm test`：字寬、轉換、特效、模組邊界共 32 項；部署 workflow（`.github/workflows/pages.yml`）測試沒過就不部署。瀏覽器端（繪製、拖放、手機版面）目前沒有自動化，靠人工或臨時腳本
+- （→ §0 檔案清單）`start.bat`：Windows 一鍵啟動（缺 `node_modules` 先 `npm install`，再 `npm start`）。必須是 CRLF，由 `.gitattributes` 的 `*.bat` 例外保證
+- （→ §8 驗證）`npm start` = `vite --open`；`npm run phone` = `vite --host --open`，讓同網路的手機連進來
 - （→ §9 刻意沒做的事）原圖色模式下，波浪／故障的位移不帶著顏色走（色圖固定在格子上）—— 位移不到一格，相鄰色相近，看不出來；要修得逐格上色，200 欄會掉幀
 - （→ §9 刻意沒做的事）輪廓只在密度模式生效 —— 描邊字元插進句子會破壞訊息填充模式的可讀性
