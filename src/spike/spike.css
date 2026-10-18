@@ -1,0 +1,240 @@
+:root {
+  --bg: #0b0b0d;
+  --panel: #141418;
+  --line: #26262d;
+  --text: #e8e6e3;
+  --muted: #8b8a90;
+  --accent: #d9b26f;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  grid-template-rows: 1fr auto;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.panel {
+  grid-row: 1 / 3;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 16px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.08em;
+}
+.brand p {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px 10px;
+}
+fieldset[hidden] {
+  display: none;
+}
+legend {
+  color: var(--accent);
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 76px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.row output {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.row.wide {
+  grid-template-columns: 76px 1fr;
+}
+.row.stack {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
+}
+input[type='text'],
+textarea,
+select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+input[type='color'] {
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 2px;
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg label {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+}
+.seg input {
+  display: none;
+}
+.seg label:has(input:checked) {
+  background: var(--line);
+  color: var(--accent);
+}
+
+.effect {
+  border-top: 1px dashed var(--line);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+.effect:first-of-type {
+  border-top: 0;
+  margin-top: 0;
+}
+.effect .head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.effect .head small {
+  color: var(--muted);
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+button {
+  flex: 1;
+  background: var(--line);
+  color: var(--text);
+  border: 1px solid #34343d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--accent);
+}
+button.primary {
+  background: var(--accent);
+  color: #1a1408;
+  border-color: var(--accent);
+}
+
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 16px;
+  min-height: 0;
+}
+#view {
+  display: block;
+}
+.drop-hint {
+  position: absolute;
+  inset: 12px;
+  display: none;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  color: var(--accent);
+  background: rgb(11 11 13 / 0.7);
+  font-size: 18px;
+}
+.stage.dragging .drop-hint {
+  display: grid;
+}
+
+.status {
+  padding: 6px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 55vh auto auto;
+    height: auto;
+  }
+  .stage {
+    grid-row: 1;
+    height: 55vh;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .panel {
+    grid-row: 2;
+    border-right: 0;
+    overflow: visible;
+  }
+  .status {
+    grid-row: 3;
+  }
+}
