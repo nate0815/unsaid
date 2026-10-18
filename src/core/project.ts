@@ -6,7 +6,8 @@
  *   - 執行期格式是 core 的 Grid／Clip，播放器直接拿來畫
  * 兩者只透過 `encodeProject`／`decodeProject` 轉換。 */
 
-import { CELL_ASPECT, emptyGrid, putChar, type Clip, type Grid } from './grid'
+import { textGrid } from './convert'
+import { CELL_ASPECT, emptyGrid, putChar, stillClip, type Clip, type Grid } from './grid'
 import { charWidth, splitChars } from './width'
 
 /* ─────────── 執行期格式 ─────────── */
@@ -30,24 +31,30 @@ export interface SceneStyle {
 
 export type Advance = { mode: 'click' } | { mode: 'auto'; seconds: number }
 
-export interface StartNode {
-  id: string
-  type: 'start'
-  next: string | null
-}
-
-export interface SceneNode {
-  id: string
-  type: 'scene'
+/** 一個字元畫面。Scene 的本體；`Start`／`End` 也可以掛一個，規格相同（DESIGN「Node 種類」）。 */
+export interface Screen {
   /** MVP 只有一層；格式先做成陣列，之後多層合成不必改格式（DESIGN「Scene」）。 */
   layers: Clip[]
   style: SceneStyle
   effects: EffectSpec[]
-  advance: Advance
-  next: string | null
   /** 圖層是怎麼做出來的（原圖＋轉換參數），讓編輯器能隨時重調（DESIGN「專案存檔」）。
    *  **只存在專案檔，匯出 HTML 時拿掉** —— 對方手上的檔案不含原圖。從 HTML 取回的專案沒有它。 */
   source?: SceneSource
+}
+
+export interface StartNode {
+  id: string
+  type: 'start'
+  next: string | null
+  /** 起始畫面；沒有就只顯示「點一下開始」。 */
+  screen?: Screen
+}
+
+export interface SceneNode extends Screen {
+  id: string
+  type: 'scene'
+  advance: Advance
+  next: string | null
 }
 
 /* ─────────── 圖層來源（編輯器用；匯出 HTML 不含） ─────────── */
@@ -109,7 +116,8 @@ export interface ChoiceNode {
 export interface EndNode {
   id: string
   type: 'end'
-  text: string
+  /** 結尾畫面；沒有就是空白背景。 */
+  screen?: Screen
   replay: boolean
 }
 
@@ -120,6 +128,32 @@ export interface Project {
   nodes: FlowNode[]
   /** 流程圖上每個 node 的位置。編輯器用，匯出 HTML 時拿掉。 */
   layout?: Record<string, { x: number; y: number }>
+}
+
+/** node 帶的畫面：Scene 本身就是畫面；Start／End 是選配的 `screen`；Choice 沒有。 */
+export function screenOf(n: FlowNode): Screen | undefined {
+  if (n.type === 'scene') return n
+  if (n.type === 'start' || n.type === 'end') return n.screen
+  return undefined
+}
+
+/** 換掉 node 的畫面（不可變更新）。Choice 原樣回傳；Start／End 傳 undefined 就是拿掉畫面。 */
+export function withScreen<T extends FlowNode>(n: T, screen: Screen | undefined): T {
+  if (n.type === 'scene') return screen ? { ...n, ...screen } : n
+  if (n.type === 'start' || n.type === 'end') {
+    const { screen: _, ...rest } = n
+    return (screen ? { ...rest, screen } : rest) as T
+  }
+  return n
+}
+
+/** 文字畫面的預設樣子：新的 Scene、Start／End 的畫面、舊版 End 的結尾文字都從這裡來。 */
+export const TEXT_COLS = 36
+export const TEXT_STYLE: SceneStyle = { fg: '#f1e7d8', bg: '#0b0b0d', useColors: false }
+
+export function textScreen(text: string, effects: EffectSpec[], style: SceneStyle = TEXT_STYLE): Screen {
+  const params = { ...DEFAULT_PARAMS, cols: TEXT_COLS }
+  return { layers: [stillClip(textGrid(text, params.cols))], style: { ...style }, effects, source: { layer: { kind: 'text', text }, params } }
 }
 
 export const CHOICE_MIN = 2
@@ -164,6 +198,8 @@ export function validateProject(p: Project): Problem[] {
       case 'end':
         break
     }
+    const screen = n.type === 'scene' ? undefined : screenOf(n)
+    if (screen && screen.layers.length === 0) problems.push({ node: n.id, message: '畫面沒有圖層' })
   }
   return problems
 }
@@ -172,7 +208,7 @@ export function validateProject(p: Project): Problem[] {
 
 export const FORMAT = 'unsaid'
 /** 存檔格式版本。**改了格式就加一，並在 `MIGRATIONS` 補上從舊版升上來的函式**（DESIGN「專案存檔」：舊檔要打得開）。 */
-export const FORMAT_VERSION = 2
+export const FORMAT_VERSION = 3
 
 /** 一格字元格的存檔形式。 */
 export interface GridFile {
@@ -192,8 +228,11 @@ export interface ClipFile {
   delays?: number[]
 }
 
+export type ScreenFile = Omit<Screen, 'layers'> & { layers: ClipFile[] }
 export type SceneNodeFile = Omit<SceneNode, 'layers'> & { layers: ClipFile[] }
-export type FlowNodeFile = Exclude<FlowNode, SceneNode> | SceneNodeFile
+export type StartNodeFile = Omit<StartNode, 'screen'> & { screen?: ScreenFile }
+export type EndNodeFile = Omit<EndNode, 'screen'> & { screen?: ScreenFile }
+export type FlowNodeFile = StartNodeFile | SceneNodeFile | ChoiceNode | EndNodeFile
 
 export interface ProjectFile {
   format: typeof FORMAT
@@ -209,6 +248,19 @@ export interface ProjectFile {
 const MIGRATIONS: Record<number, (f: any) => any> = {
   // v1 → v2：加了 Scene 的 `source` 與專案的 `layout`，兩者都可省略 —— v1 的檔案原樣就是合法的 v2。
   1: (f) => ({ ...f, version: 2 }),
+  // v2 → v3：Start／End 可以掛畫面（DESIGN v0.5）。End 的 `text` 併進結尾畫面：
+  // 有字就變成文字畫面，保留舊版播放器的樣子（打字機 1.5 倍速）；空字串就是不設畫面。
+  2: (f) => ({
+    ...f,
+    version: 3,
+    nodes: f.nodes.map((n: any) => {
+      if (n.type !== 'end') return n
+      const { text, ...rest } = n
+      if (typeof text !== 'string' || !text.trim()) return rest
+      const s = textScreen(text, [{ kind: 'typewriter', speed: 1.5, intensity: 0.4 }])
+      return { ...rest, screen: { ...s, layers: s.layers.map(encodeClip) } }
+    }),
+  }),
 }
 
 export class ProjectFormatError extends Error {}
@@ -290,6 +342,18 @@ export function decodeClip(f: ClipFile): Clip {
 
 /* ─── Project ⇄ ProjectFile ─── */
 
+/** 畫面的圖層轉成存檔格式；匯出 HTML 時拿掉原圖（TECH「不變式」#15）。Scene node 本身也走這支（多的欄位原樣帶過去）。 */
+function encodeScreen<T extends Screen>(s: T, opts: { forExport?: boolean }): Omit<T, 'layers'> & { layers: ClipFile[] } {
+  const { source, ...rest } = s
+  const out = { ...rest, layers: s.layers.map(encodeClip) } as unknown as Omit<T, 'layers'> & { layers: ClipFile[] }
+  if (source && !opts.forExport) out.source = source
+  return out
+}
+
+function decodeScreen<T extends ScreenFile>(s: T): Omit<T, 'layers'> & { layers: Clip[] } {
+  return { ...s, layers: s.layers.map(decodeClip) }
+}
+
 /** `forExport`：要放進匯出 HTML —— 拿掉原圖（`source`）與編輯器的版面（`layout`）。 */
 export function encodeProject(p: Project, opts: { forExport?: boolean } = {}): ProjectFile {
   const file: ProjectFile = {
@@ -297,12 +361,10 @@ export function encodeProject(p: Project, opts: { forExport?: boolean } = {}): P
     version: FORMAT_VERSION,
     cellAspect: CELL_ASPECT,
     title: p.title,
-    nodes: p.nodes.map((n) => {
-      if (n.type !== 'scene') return n
-      const { source, ...rest } = n
-      const out: SceneNodeFile = { ...rest, layers: n.layers.map(encodeClip) }
-      if (source && !opts.forExport) out.source = source
-      return out
+    nodes: p.nodes.map((n): FlowNodeFile => {
+      if (n.type === 'scene') return encodeScreen(n, opts) as SceneNodeFile
+      if ((n.type === 'start' || n.type === 'end') && n.screen) return { ...n, screen: encodeScreen(n.screen, opts) }
+      return n as FlowNodeFile
     }),
   }
   if (p.layout && !opts.forExport) file.layout = p.layout
@@ -321,7 +383,11 @@ export function decodeProject(raw: unknown): Project {
   }
   const project: Project = {
     title: f.title ?? '',
-    nodes: f.nodes.map((n) => (n.type === 'scene' ? { ...n, layers: n.layers.map(decodeClip) } : n)) as FlowNode[],
+    nodes: f.nodes.map((n) => {
+      if (n.type === 'scene') return decodeScreen(n)
+      if ((n.type === 'start' || n.type === 'end') && n.screen) return { ...n, screen: decodeScreen(n.screen) }
+      return n
+    }) as FlowNode[],
   }
   if (f.layout) project.layout = f.layout
   return project

@@ -107,6 +107,9 @@ describe('存檔格式 v2：原圖只留在專案檔', () => {
 
     const exported = extractProjectFile(buildHtml(p)) as { nodes: { source?: unknown }[]; layout?: unknown }
     expect(exported.nodes.every((n) => n.source === undefined)).toBe(true)
+    // Start／End 的畫面也一樣（新專案的結尾預設就有畫面）
+    expect((file.nodes[2] as { screen?: { source?: unknown } }).screen?.source).toBeDefined()
+    expect((exported.nodes[2] as { screen?: { source?: unknown } }).screen?.source).toBeUndefined()
     expect(exported.layout).toBeUndefined()
   })
 

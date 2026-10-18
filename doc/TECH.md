@@ -29,6 +29,8 @@
 - `index.html` 是流程編輯器（`src/editor/main.tsx`）；`spike.html` 是 M1 的試作頁，改名「Scene 工作室（試作）」，M4 會併進編輯器。`vite.config.ts` 的 `build.rollupOptions.input` 列兩頁
 - `src/editor/`：`App.tsx`（編輯器主體：狀態、自動存檔、重新轉換、驗證、工具列、預覽）、`graph.ts`（流程圖的純函式操作）、`nodes.tsx`（四種 node 的外觀）、`Inspector.tsx`（屬性面板）、`Thumb.tsx`（字元畫面縮圖）、`storage.ts`（IndexedDB 自動存檔）、`editor.css`
 - `src/media/render-source.ts`：`renderSource`（來源＋參數 → Clip）、`gridsFromSamples`、`textGrid`、`gifSamples`、`sourceFromFile`。spike 與編輯器共用，不各寫一份
+- `textGrid` 搬到 `core/convert.ts`（存檔遷移在 core 裡要用）；`media/render-source.ts` 轉出同名，既有 import 不必改
+- `src/editor/SceneEditor.tsx`：Scene 編輯畫面。流程圖上雙擊 Scene 打開；左邊用 `ScenePlayer` 即時播放（含特效，點一下重播），右邊直接重用 `Inspector.tsx` 匯出的 `ScreenInspector`（傳 `hideThumb`），Scene 再加 `AdvanceFields`。Esc／點背景／「完成」關閉
 
 ---
 
@@ -61,6 +63,7 @@ npm run build     # 型別檢查＋建置
 
 1. 瀏覽器載入 HTML → `src/player/main.ts` 讀 `<script id="unsaid-data">` → `decodeProject` → `mountPlayer`
 2. 「點一下開始」→ `Flow.begin()` → 依步驟顯示 Scene（`ScenePlayer` ＋ `ClipFrames` ＋ `Renderer`）、Choice（疊在上一個 Scene 上）、End
+- 播放器起始：`mountPlayer` 結尾若 Start 有 `screen`，先 `showScreen` 在背後播；點一下才 `Flow.begin()`。重看從 `Flow.begin()` 開始，不再播起始畫面
 
 ---
 
@@ -72,6 +75,8 @@ npm run build     # 型別檢查＋建置
 - node 之間用 `next`（Start、Scene）與 `options[].next`（Choice）連；`null` = 沒接。Scene 的 `advance` 是 `{ mode: 'click' }` 或 `{ mode: 'auto', seconds }`
 - 存檔格式 v2：Scene 多了選填的 `source = { layer, params }`（`layer` 是 `{ kind: 'image', image: dataURL }`／`{ kind: 'gif', gif: base64 原檔 }`／`{ kind: 'text', text }`；`params` 是 `ConvertParams`），專案多了選填的 `layout = { [nodeId]: { x, y } }`。v1 → v2 的遷移是原樣升版（兩個欄位都可省略）
 - `encodeProject(p, { forExport: true })` 拿掉 `source` 與 `layout` —— 匯出 HTML 只走這條（`buildHtml`）
+- `Screen = { layers, style, effects, source? }`：一個字元畫面。`SceneNode extends Screen`（多 `advance`、`next`）；`StartNode.screen?`、`EndNode.screen?` 選配。`EndNode` 不再有 `text`。`screenOf(n)` 取 node 的畫面、`withScreen(n, s)` 換畫面（Start／End 傳 `undefined` 是拿掉）
+- 存檔格式 v3（`FORMAT_VERSION = 3`）：`ScreenFile`、`StartNodeFile`、`EndNodeFile`。v2 → v3 遷移：End 的 `text` 有字就變成文字畫面（`textScreen(text, 打字機 1.5 倍速)`，保留舊播放器的樣子），空字串就是沒有畫面
 
 ---
 
@@ -91,7 +96,7 @@ npm run build     # 型別檢查＋建置
 - `exportGif`：畫面外的 `Renderer`（`readback: true`、dpr 1）依 `frameDelayMs(fps)`（對齊 1/100 秒）推進時間；全片共用一組 256 色調色盤，從最多 8 個時間點每 5 像素取樣；每 3 格讓出主執行緒一次
 - `Renderer`：`setGrid` 只換內容不重排版；色圖依 Grid 用 WeakMap 快取；`fit(maxW, maxH, dpr)` 可指定 dpr
 - `Flow`：`begin()`／`advance()`／`choose(i)` 回傳下一步；`lastScene` 給 Choice 疊加用；壞連結一律走到一個空的 End，不拋錯；Start 被接回來就從頭
-- `mountPlayer`：點擊／空白鍵／Enter —— 進場特效沒播完先跳到播完，播完才推進；`auto` 的 Scene 等 `max(seconds, 進場長度)` 自動推進、不吃點擊推進；Choice 時 `ScenePlayer.pause()` 凍結、`.choosing` 變暗；數字鍵選、方向鍵移 focus；End 用打字機排出結尾文字，`replay` 才有「重看」
+- `mountPlayer`：點擊／空白鍵／Enter —— 進場特效沒播完先跳到播完，播完才推進；`auto` 的 Scene 等 `max(seconds, 進場長度)` 自動推進、不吃點擊推進；Choice 時 `ScenePlayer.pause()` 凍結、`.choosing` 變暗；數字鍵選、方向鍵移 focus；End 播自己的 `screen`（沒有就是空白、背景沿用最後一個 Scene），`replay` 才有「重看」；Start 有 `screen` 時在「點一下開始」背後播，提示移到下方（`.u-start.has-screen`）
 - 匯出 HTML：`<script type="application/json" id="unsaid-data">` ＋ 打包好的播放器（`virtual:unsaid-player`，由 `playerBundlePlugin` 在建置／開發時即時打包）。分頁標題用訊息自己的標題（預設「一則訊息」），不放工具名
 - `ScenePlayer` 加了 `elapsed()`、`seek(t)`、`pause()`、`enterDuration()`
 - 編輯器只有一份狀態 `Project`；畫布的 nodes／edges、屬性面板、預覽、匯出都從它推出。Scene 的 `source` 物件一換（不可變更新），背景就重新 `renderSource`、把結果寫回 `layers`；回來時 `source` 已經又變了就丟掉結果
@@ -99,6 +104,15 @@ npm run build     # 型別檢查＋建置
 - 自動存檔：專案變動後 500 ms 存一次 `encodeProject(project)`（含原圖）到 IndexedDB `unsaid`／`projects`／`autosave`。讀不回來就先把原始資料另存成 `broken-<時間>` 再開新專案
 - `sourceFromFile`：GIF 動圖（多於一格）保留原檔；其他圖縮到長邊 `SOURCE_MAX_SIDE`，PNG 維持 PNG、其餘存 JPEG 0.9
 - 新增 node：有選取的 node 就放在它右邊 280，沒有就放畫面中央；再經 `freeSpot` 避開既有的 node
+- `textScreen(text, effects, style?)`（`core/project.ts`）：文字畫面的預設樣子，`TEXT_COLS = 36`、`TEXT_STYLE`。新 Scene、Start／End 的預設畫面、v3 遷移都用它
+- `graph.ts` 的 `newStartScreen`（文字＋解碼）、`newEndScreen`（文字＋打字機）。新專案的 Start 沒有畫面、End 有；新加的 End 也有
+- `Inspector.tsx`：`ScreenInspector<T extends Screen>` 是畫面參數（Scene 與 Start／End 共用），`AdvanceFields` 是 Scene 才有的推進方式，`SceneInspector` = 兩者相加。Start／End 用 `OptionalScreen`：「＋ 加上畫面」／「拿掉畫面」
+- `SceneEditor` 收任何帶畫面的 node（`screenOf(node)` 不為空）；雙擊 Start／End 時若還沒有畫面，先加預設的再打開。Choice 雙擊沒反應
+- `App.tsx` 的背景重轉掃所有 node 的 `screenOf(n).source`，結果用 `withScreen` 寫回；`markRendered` 標記載入時已經轉好的
+- 特效清單一變，Scene 編輯畫面的預覽從頭播；只改轉換參數或顏色時沿用時間（`ScenePlayer.show(..., restart=false)`），跟 spike 拉拉桿的行為一致
+- `FlowData.onAddOption`：Choice node 上的「＋」呼叫它，由 `App.tsx` 接成 `updateNode(p, id, addOption)`。按鈕帶 `nodrag`，並擋掉 click／dblclick 冒泡
+- `ChoiceView` 在選項數變動時呼叫 `useUpdateNodeInternals` —— 出口 handle 增減後要重量位置，新出口才接得到線
+- React Flow 關掉 `zoomOnDoubleClick`，雙擊只用來開 Scene 編輯畫面
 
 ---
 
@@ -124,8 +138,8 @@ npm run build     # 型別檢查＋建置
 | 11 | **專案資料放進 `<script>` 一律經過 `jsonForScript`**（跳脫 `<`、U+2028、U+2029） | `src/core/project.ts` `jsonForScript`、`src/media/export-html.ts` `buildHtml` | 訊息裡有 `</script>` 時，匯出檔從那裡斷掉，對方打開只看到半頁或一片黑 |
 | 12 | **存檔格式一改就加 `FORMAT_VERSION`，並在 `MIGRATIONS` 補上從舊版升上來的函式** | `src/core/project.ts` `FORMAT_VERSION`、`MIGRATIONS` | 舊的專案檔／匯出檔打不開，或更糟：打得開但內容被讀錯（DESIGN「專案存檔」要求舊檔能開） |
 | 13 | **播放器的 CSS 必須保留 `.u-root [hidden]{display:none!important}`** | `src/player/app.ts` `CSS` | 有設 `display` 的元素（`.u-start` 等）`hidden` 會失效：「點一下開始」一直疊在畫面上，但 `hidden` 屬性看起來是對的 |
-| 14 | **Scene 的 `source` 只能整個換新物件（不可變更新），不能就地改它的欄位** | `src/editor/App.tsx` 的 `rendered`（`WeakSet<SceneSource>`）、`src/editor/Inspector.tsx` 的 `patch` | 就地改參數不會觸發重新轉換：面板上的數字變了，畫面卻停在舊的，而且重新整理後才「突然好了」 |
-| 15 | **原圖（`source`）與版面（`layout`）不得進匯出的 HTML**：匯出一律 `encodeProject(p, { forExport: true })` | `src/media/export-html.ts` `buildHtml`、`src/core/project.ts` `encodeProject`；`tests/graph.test.ts` 把關 | 對方手上的檔案帶著製作者的原始照片（DESIGN「匯出」明定不含），檔案也大上好幾倍；畫面看起來完全正常 |
+| 14 | **畫面（Scene 本身、Start／End 的 `screen`）的 `source` 只能整個換新物件（不可變更新），不能就地改它的欄位**；換畫面一律經過 `withScreen` | `src/editor/App.tsx` 的 `rendered`（`WeakSet<SceneSource>`）、`src/editor/Inspector.tsx` 的 `patch`、`src/core/project.ts` `withScreen` | 就地改參數不會觸發重新轉換：面板上的數字變了，畫面卻停在舊的，而且重新整理後才「突然好了」 |
+| 15 | **原圖（`source`，含 Start／End 的 `screen.source`）與版面（`layout`）不得進匯出的 HTML**：匯出一律 `encodeProject(p, { forExport: true })`，畫面一律經過 `encodeScreen` | `src/media/export-html.ts` `buildHtml`、`src/core/project.ts` `encodeProject`、`encodeScreen`；`tests/graph.test.ts` 把關 | 對方手上的檔案帶著製作者的原始照片（DESIGN「匯出」明定不含），檔案也大上好幾倍；畫面看起來完全正常 |
 | 16 | **刪 node 一律經過 `removeNodes`**（它會把指向被刪 node 的連線清成「沒接」） | `src/editor/graph.ts` `removeNodes`、`src/editor/App.tsx` `onNodesChange` | 留下指向不存在 node 的連線：驗證會報、但若繞過驗證匯出，播放器走到那裡會直接跳到空白結尾 |
 | 17 | **餵給 React Flow 的 node 物件必須帶上 `measured`**（從 `onNodesChange` 的 `dimensions` 變更記下來）。專案是唯一狀態，每次重繪都重建 node 物件，少了這欄 React Flow 就當成沒量過 | `src/editor/App.tsx` 的 `measured`、`rfNodes`、`onNodesChange` | 拖曳 node 時整張圖一直閃（每一格都先隱藏、重量、再顯示），操作照樣能用，所以容易被當成「效能不好」 |
 
@@ -213,8 +227,4 @@ npm run build     # 型別檢查＋建置
 
 ### 10.2 目前收件匣
 
-- （→ 檔案清單）`src/editor/SceneEditor.tsx`：Scene 編輯畫面。流程圖上雙擊 Scene 打開；左邊用 `ScenePlayer` 即時播放（含特效，點一下重播），右邊直接重用 `Inspector.tsx` 匯出的 `SceneInspector`（傳 `hideThumb`）。Esc／點背景／「完成」關閉
-- （→ 模組契約）特效清單一變，Scene 編輯畫面的預覽從頭播；只改轉換參數或顏色時沿用時間（`ScenePlayer.show(..., restart=false)`），跟 spike 拉拉桿的行為一致
-- （→ 模組契約）`FlowData.onAddOption`：Choice node 上的「＋」呼叫它，由 `App.tsx` 接成 `updateNode(p, id, addOption)`。按鈕帶 `nodrag`，並擋掉 click／dblclick 冒泡
-- （→ 模組契約）`ChoiceView` 在選項數變動時呼叫 `useUpdateNodeInternals` —— 出口 handle 增減後要重量位置，新出口才接得到線
-- （→ ?）React Flow 關掉 `zoomOnDoubleClick`，雙擊只用來開 Scene 編輯畫面
+（空 —— 2026-10-18 Start／End 畫面發 PR 前整併）

@@ -9,7 +9,7 @@ export type Step =
   | { kind: 'end'; node: EndNode }
 
 /** 壞掉的連結（接到不存在的 node、或沒接）一律走到這個 End，而不是當掉。 */
-const BROKEN_END: EndNode = { id: '__broken__', type: 'end', text: '', replay: true }
+const BROKEN_END: EndNode = { id: '__broken__', type: 'end', replay: true }
 
 export class Flow {
   private readonly byId: Map<string, FlowNode>

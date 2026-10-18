@@ -4,7 +4,10 @@
 
 import { layoutText, sampleImage, toMessage } from '../core/convert'
 import { emptyGrid, stillClip, type Clip, type Grid } from '../core/grid'
-import type { EffectSpec, Project, SceneNode, SceneStyle } from '../core/project'
+import { textScreen, type EffectSpec, type Project, type SceneNode, type SceneStyle } from '../core/project'
+
+/** 結尾畫面：文字＋打字機。 */
+const END_FX: EffectSpec[] = [{ kind: 'typewriter', speed: 1.5, intensity: 0.4 }]
 
 /** 畫一顆帶漸層的心。`scale` 讓示範動圖可以「跳動」。 */
 export function drawHeart(scale = 1): HTMLCanvasElement {
@@ -94,8 +97,8 @@ export function buildDemo(first: FirstScene): Project {
       },
       scene('s2', 's3', textClip('那就好。\n\n其實我一直想說的是——'), [{ kind: 'decode', speed: 1, intensity: 0.8 }], plain),
       scene('s3', 'e1', beatingHeart(), [{ kind: 'wave', speed: 0.6, intensity: 0.25 }], { ...first.style, useColors: true }),
-      { id: 'e1', type: 'end', text: '謝謝你看完。', replay: true },
-      { id: 'e2', type: 'end', text: '沒關係。\n等你準備好，再打開一次。', replay: true },
+      { id: 'e1', type: 'end', screen: textScreen('謝謝你看完。', END_FX), replay: true },
+      { id: 'e2', type: 'end', screen: textScreen('沒關係。\n等你準備好，再打開一次。', END_FX), replay: true },
     ],
   }
 }

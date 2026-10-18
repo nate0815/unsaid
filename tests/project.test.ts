@@ -12,6 +12,7 @@ import {
   FORMAT_VERSION,
   jsonForScript,
   ProjectFormatError,
+  textScreen,
   validateProject,
   type Project,
   type SceneNode,
@@ -53,8 +54,8 @@ function demo(): Project {
       scene('s1', 'c1', g),
       { id: 'c1', type: 'choice', prompt: '要聽嗎？', options: [{ label: '好', next: 's2' }, { label: '不要', next: 'e2' }] },
       scene('s2', 'e1', g),
-      { id: 'e1', type: 'end', text: '謝謝', replay: true },
-      { id: 'e2', type: 'end', text: '', replay: false },
+      { id: 'e1', type: 'end', screen: textScreen('謝謝', []), replay: true },
+      { id: 'e2', type: 'end', replay: false },
     ],
   }
 }
@@ -108,6 +109,36 @@ describe('專案存檔', () => {
     expect([f.format, f.version, f.cellAspect]).toEqual(['unsaid', FORMAT_VERSION, 2])
   })
 
+  it('Start／End 的畫面存了再讀回來；匯出時拿掉它們的原圖', () => {
+    const p = demo()
+    p.nodes[0] = { id: 'start', type: 'start', next: 's1', screen: textScreen('給你', []) }
+    const back = decodeProject(JSON.parse(JSON.stringify(encodeProject(p))))
+    const st = back.nodes[0]
+    expect(st.type === 'start' && st.screen?.source?.layer).toEqual({ kind: 'text', text: '給你' })
+    sameGrid((p.nodes[0] as any).screen.layers[0].frames[0], (st as any).screen.layers[0].frames[0])
+    const exported = encodeProject(p, { forExport: true })
+    for (const n of exported.nodes) if (n.type === 'start' || n.type === 'end') expect(n.screen?.source).toBeUndefined()
+    expect((exported.nodes[0] as any).screen.layers).toHaveLength(1)
+  })
+
+  it('v2 舊檔：End 的結尾文字變成文字畫面（打字機），空字串就是沒有畫面', () => {
+    const v3 = encodeProject(demo()) as any
+    const v2 = {
+      ...v3,
+      version: 2,
+      nodes: v3.nodes.map((n: any) => (n.type === 'end' ? { id: n.id, type: 'end', text: n.id === 'e1' ? '謝謝你看完' : '', replay: n.replay } : n)),
+    }
+    const back = decodeProject(JSON.parse(JSON.stringify(v2)))
+    const e1 = back.nodes.find((n) => n.id === 'e1')!
+    const e2 = back.nodes.find((n) => n.id === 'e2')!
+    expect(e1.type === 'end' && e1.screen?.source?.layer).toEqual({ kind: 'text', text: '謝謝你看完' })
+    expect(e1.type === 'end' && e1.screen?.effects.map((x) => x.kind)).toEqual(['typewriter'])
+    expect(e1.type === 'end' && e1.screen!.layers[0].frames[0].cells.some((c) => c.ch === '謝')).toBe(true)
+    expect(e2.type === 'end' && e2.screen).toBeUndefined()
+    expect('text' in e1).toBe(false)
+    expect(validateProject(back)).toEqual([])
+  })
+
   it('不是專案檔、或比這版新的檔案，給看得懂的錯誤', () => {
     expect(() => decodeProject({ hello: 1 })).toThrow(ProjectFormatError)
     expect(() => decodeProject({ ...encodeProject(demo()), version: FORMAT_VERSION + 1 })).toThrow(/較新的版本/)
@@ -125,7 +156,7 @@ describe('驗證：沒接好的地方要指出來', () => {
     ;(p.nodes[0] as SceneNode).next = null
     const c = p.nodes[1]
     if (c.type === 'choice') c.options = [{ label: '只有一個', next: 'nowhere' }]
-    p.nodes.push({ id: 'e1', type: 'end', text: '', replay: false })
+    p.nodes.push({ id: 'e1', type: 'end', replay: false })
     const msgs = validateProject(p).map((x) => x.message)
     expect(msgs.some((m) => m.includes('Start 必須恰好一個'))).toBe(true)
     expect(msgs.some((m) => m.includes('出口沒有接到'))).toBe(true)
@@ -138,15 +169,15 @@ describe('驗證：沒接好的地方要指出來', () => {
 describe('匯出 HTML 裡的專案資料', () => {
   it('訊息裡有 </script> 也不會讓 HTML 斷掉，而且取得回來', () => {
     const p = demo()
-    const end = p.nodes.find((n) => n.type === 'end')!
-    if (end.type === 'end') end.text = '</script><b>嗨</b>' + cp(0x2028) + '下一行'
+    const c = p.nodes.find((n) => n.type === 'choice')!
+    if (c.type === 'choice') c.prompt = '</script><b>嗨</b>' + cp(0x2028) + '下一行'
     const json = jsonForScript(encodeProject(p))
     expect(json.includes('</script')).toBe(false)
     expect(json.includes(cp(0x2028))).toBe(false)
     const html = `<html><body><script type="application/json" id="unsaid-data">${json}</script><script>x()</script></body></html>`
     const back = decodeProject(extractProjectFile(html))
-    const e = back.nodes.find((n) => n.type === 'end')
-    expect(e && e.type === 'end' && e.text).toBe('</script><b>嗨</b>' + cp(0x2028) + '下一行')
+    const e = back.nodes.find((n) => n.type === 'choice')
+    expect(e && e.type === 'choice' && e.prompt).toBe('</script><b>嗨</b>' + cp(0x2028) + '下一行')
   })
 
   it('不是匯出檔就回傳 null', () => {

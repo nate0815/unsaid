@@ -159,6 +159,12 @@ input[type='color'] {
 .fnode.start .fnode-title {
   margin: 0;
 }
+.fnode.start.has-screen {
+  border-radius: 10px;
+}
+.fnode.start.has-screen .fnode-title {
+  margin-bottom: 4px;
+}
 .fnode.end {
   border-style: dashed;
 }
