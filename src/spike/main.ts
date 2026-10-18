@@ -12,6 +12,9 @@ import { exportGif, GIF_MAX_SECONDS, suggestSeconds } from '../media/gif-export'
 import type { EffectKind, EffectSpec } from '../player/effects'
 import type { RenderStyle } from '../player/renderer'
 import { ScenePlayer } from '../player/scene-player'
+import { decodeProject, encodeProject, extractProjectFile, validateProject, type Project } from '../core/project'
+import { buildHtml } from '../media/export-html'
+import { buildDemo, drawHeart } from './demo'
 
 /* ─────────── 狀態 ─────────── */
 
@@ -112,38 +115,15 @@ type Source =
 
 /** 沒載圖時的範例：一顆帶漸層的心。程式畫的，repo 不必放圖檔。 */
 function sampleHeart(): Source {
-  const w = 480
-  const h = 420
-  const c = document.createElement('canvas')
-  c.width = w
-  c.height = h
-  const ctx = c.getContext('2d')!
-  const glow = ctx.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w * 0.6)
-  glow.addColorStop(0, '#3a1420')
-  glow.addColorStop(1, '#000')
-  ctx.fillStyle = glow
-  ctx.fillRect(0, 0, w, h)
-  ctx.save()
-  ctx.translate(w / 2, h * 0.3)
-  ctx.beginPath()
-  ctx.moveTo(0, 0)
-  ctx.bezierCurveTo(-30, -80, -200, -60, -170, 60)
-  ctx.bezierCurveTo(-150, 140, -40, 200, 0, 260)
-  ctx.bezierCurveTo(40, 200, 150, 140, 170, 60)
-  ctx.bezierCurveTo(200, -60, 30, -80, 0, 0)
-  const fill = ctx.createLinearGradient(-170, -60, 170, 260)
-  fill.addColorStop(0, '#ffd1dc')
-  fill.addColorStop(0.5, '#ff5a7a')
-  fill.addColorStop(1, '#9b1236')
-  ctx.fillStyle = fill
-  ctx.fill()
-  ctx.restore()
-  return { kind: 'still', img: c, w, h }
+  const img = drawHeart()
+  return { kind: 'still', img, w: img.width, h: img.height }
 }
 
 let source: Source = sampleHeart()
 
 async function loadFile(file: File) {
+  // 匯出的 HTML 或專案 JSON 拖進來 = 取回那則訊息（DESIGN「匯出」：拖回編輯器可以繼續編輯）。
+  if (/\.(html?|json)$/i.test(file.name)) return importProject(file)
   if (!file.type.startsWith('image/') && !/\.gif$/i.test(file.name)) return
   const bytes = await file.arrayBuffer()
   let next: Source | null = null
@@ -375,7 +355,7 @@ function button(text: string, onClick: () => void, primary = false) {
 const S = () => state as Obj
 const isImage = () => state.source === 'image'
 
-const fileInput = el('input', { type: 'file', accept: 'image/*,.gif', hidden: true })
+const fileInput = el('input', { type: 'file', accept: 'image/*,.gif,.html,.json', hidden: true })
 fileInput.addEventListener('change', () => fileInput.files?.[0] && loadFile(fileInput.files[0]))
 
 group(
@@ -546,6 +526,108 @@ controls.append(
     })
   )
 )
+
+/* ─────────── 整則訊息（M2） ─────────── */
+
+/** 匯入的專案；null = 用示範流程（第一個 Scene 是目前的畫面）。 */
+let imported: Project | null = null
+
+function currentProject(): Project {
+  return imported ?? buildDemo({ clip: current, effects: effects(), style: style() })
+}
+
+const msgInfo = el('p', { className: 'hint' })
+const msgSource = el('p', { className: 'hint' })
+
+function describeSource() {
+  msgSource.textContent = imported
+    ? `使用匯入的訊息「${imported.title || '（未命名）'}」`
+    : '示範流程：第一個 Scene 用目前的畫面 → Choice → 兩條路 → End'
+  revertButton.hidden = !imported
+}
+
+/** 匯出前一律驗證（DESIGN「Node 種類」：沒接好的地方要擋下）。 */
+function readyHtml(): string | null {
+  const p = currentProject()
+  const problems = validateProject(p)
+  if (problems.length) {
+    msgInfo.textContent = '還不能匯出：' + problems.map((x) => (x.node ? `［${x.node}］` : '') + x.message).join('；')
+    return null
+  }
+  const html = buildHtml(p)
+  const frames = p.nodes.reduce((n, x) => n + (x.type === 'scene' ? x.layers.reduce((m, l) => m + l.frames.length, 0) : 0), 0)
+  msgInfo.textContent = `HTML ${(new Blob([html]).size / 1024).toFixed(0)} KB · ${p.nodes.filter((x) => x.type === 'scene').length} 個 Scene、共 ${frames} 格字元畫面`
+  return html
+}
+
+async function importProject(file: File) {
+  try {
+    const text = await file.text()
+    const raw = /\.json$/i.test(file.name) ? JSON.parse(text) : extractProjectFile(text)
+    if (!raw) throw new Error('這個檔案裡找不到 Unsaid 的訊息資料')
+    imported = decodeProject(raw)
+    msgInfo.textContent = `已匯入「${file.name}」`
+  } catch (e) {
+    msgInfo.textContent = `匯入失敗：${e instanceof Error ? e.message : e}`
+  }
+  describeSource()
+}
+
+/** 預覽 = 把**匯出檔本身**放進 iframe。看到的就是對方會看到的，不是另一套畫法。 */
+function openPreview(html: string) {
+  const frame = el('iframe', { title: '預覽', srcdoc: html })
+  frame.setAttribute('sandbox', 'allow-scripts')
+  const close = button('關閉預覽（Esc）', () => shut())
+  const box = el('div', { className: 'preview' }, frame, close)
+  const onKey = (e: KeyboardEvent) => e.key === 'Escape' && shut()
+  const shut = () => {
+    box.remove()
+    window.removeEventListener('keydown', onKey)
+  }
+  window.addEventListener('keydown', onKey)
+  document.body.append(box)
+  frame.addEventListener('load', () => frame.focus())
+}
+
+const revertButton = button('改回示範流程', () => {
+  imported = null
+  msgInfo.textContent = ''
+  describeSource()
+})
+
+const projectInput = el('input', { type: 'file', accept: '.html,.json', hidden: true })
+projectInput.addEventListener('change', () => projectInput.files?.[0] && importProject(projectInput.files[0]))
+
+group(
+  '整則訊息（M2 試作）',
+  undefined,
+  msgSource,
+  el(
+    'div',
+    { className: 'buttons' },
+    button('預覽', () => {
+      const html = readyHtml()
+      if (html) openPreview(html)
+    }, true),
+    button('匯出 HTML', () => {
+      const html = readyHtml()
+      if (html) download(new Blob([html], { type: 'text/html;charset=utf-8' }), 'unsaid.html')
+    })
+  ),
+  el(
+    'div',
+    { className: 'buttons' },
+    button('下載專案 JSON', () => {
+      const p = currentProject()
+      download(new Blob([JSON.stringify(encodeProject(p), null, 1)], { type: 'application/json' }), 'unsaid-project.json')
+    }),
+    button('匯入…', () => projectInput.click())
+  ),
+  el('div', { className: 'buttons' }, revertButton),
+  projectInput,
+  msgInfo
+)
+describeSource()
 
 /* ─────────── 拖放 ─────────── */
 
