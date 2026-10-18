@@ -1,11 +1,13 @@
 /* 流程圖上四種 node 的外觀。入口在左、出口在右；Choice 每個選項各一個出口。 */
 
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
-import type { ChoiceNode, EndNode, FlowNode, SceneNode } from '../core/project'
+import { Handle, Position, useUpdateNodeInternals, type NodeProps, type Node } from '@xyflow/react'
+import { useEffect } from 'react'
+import { CHOICE_MAX, type ChoiceNode, type EndNode, type FlowNode, type SceneNode } from '../core/project'
 import { OUT, optHandle } from './graph'
 import { Thumb } from './Thumb'
 
-export type FlowData = { node: FlowNode; problem: boolean }
+/** `onAddOption`：Choice node 上的「＋」按下時呼叫（只有 Choice 會帶）。 */
+export type FlowData = { node: FlowNode; problem: boolean; onAddOption?: () => void }
 export type RFNode = Node<FlowData>
 
 const cls = (p: NodeProps<RFNode>, kind: string) =>
@@ -42,6 +44,9 @@ function SceneView(p: NodeProps<RFNode>) {
 
 function ChoiceView(p: NodeProps<RFNode>) {
   const n = p.data.node as ChoiceNode
+  // 選項數一變，出口 handle 跟著增減：要叫 React Flow 重量一次 handle 的位置，連線才接得到新的出口。
+  const updateInternals = useUpdateNodeInternals()
+  useEffect(() => updateInternals(p.id), [n.options.length, p.id, updateInternals])
   return (
     <div className={cls(p, 'choice')}>
       <Handle type="target" position={Position.Left} />
@@ -54,6 +59,19 @@ function ChoiceView(p: NodeProps<RFNode>) {
           <Handle type="source" position={Position.Right} id={optHandle(i)} />
         </div>
       ))}
+      {n.options.length < CHOICE_MAX && (
+        <button
+          className="fnode-add nodrag"
+          title="新增選項"
+          onClick={(e) => {
+            e.stopPropagation()
+            p.data.onAddOption?.()
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          ＋
+        </button>
+      )}
     </div>
   )
 }

@@ -54,7 +54,7 @@ const FX_DEFAULT: Record<EffectKind, { speed: number; intensity: number }> = {
   glitch: { speed: 1, intensity: 0.4 },
 }
 
-function SceneInspector({ node, patch }: { node: SceneNode; patch: Patch<SceneNode> }) {
+export function SceneInspector({ node, patch, hideThumb }: { node: SceneNode; patch: Patch<SceneNode>; hideThumb?: boolean }) {
   const file = useRef<HTMLInputElement>(null)
   const src = node.source
   const setParams = (p: Partial<ConvertParams>) =>
@@ -70,7 +70,7 @@ function SceneInspector({ node, patch }: { node: SceneNode; patch: Patch<SceneNo
 
   return (
     <>
-      {node.layers[0] && (
+      {node.layers[0] && !hideThumb && (
         <div className="inspector-thumb">
           <Thumb grid={node.layers[0].frames[0]} style={node.style} width={288} height={180} />
         </div>
@@ -248,7 +248,12 @@ export function Inspector({ node, problems, patch }: { node: FlowNode | null; pr
         <p className="problem-line" key={i}>⚠ {m}</p>
       ))}
       {node.type === 'start' && <p className="field-hint">訊息從這裡開始。每則訊息恰好一個，不能刪除。</p>}
-      {node.type === 'scene' && <SceneInspector node={node} patch={patch as Patch<SceneNode>} />}
+      {node.type === 'scene' && (
+        <>
+          <p className="field-hint">在流程圖上雙擊這個 Scene，可以打開大的編輯畫面。</p>
+          <SceneInspector node={node} patch={patch as Patch<SceneNode>} />
+        </>
+      )}
       {node.type === 'choice' && <ChoiceInspector node={node} patch={patch as Patch<ChoiceNode>} />}
       {node.type === 'end' && <EndInspector node={node} patch={patch as Patch<EndNode>} />}
     </aside>
