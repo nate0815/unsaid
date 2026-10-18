@@ -31,6 +31,34 @@ export interface Grid {
   colors?: Uint8ClampedArray
 }
 
+/** 會動的圖層：一串同尺寸的字元格，各自停留 delays[i] 毫秒，播完從頭循環。
+ *  靜態圖就是只有一格的 Clip。 */
+export interface Clip {
+  frames: Grid[]
+  delays: number[]
+}
+
+export function stillClip(grid: Grid): Clip {
+  return { frames: [grid], delays: [Infinity] }
+}
+
+/** 一輪的總長（毫秒）。靜態圖是 Infinity。 */
+export function clipDuration(clip: Clip): number {
+  return clip.delays.reduce((s, d) => s + d, 0)
+}
+
+/** 時間 t（毫秒）時該顯示第幾格。 */
+export function clipIndexAt(clip: Clip, t: number): number {
+  const total = clipDuration(clip)
+  if (clip.frames.length <= 1 || !isFinite(total) || total <= 0) return 0
+  let r = ((t % total) + total) % total
+  for (let i = 0; i < clip.delays.length; i++) {
+    if (r < clip.delays[i]) return i
+    r -= clip.delays[i]
+  }
+  return clip.delays.length - 1
+}
+
 export const BLANK: Readonly<Cell> = Object.freeze({ ch: ' ', w: 1, a: 0 })
 
 export function emptyGrid(cols: number, rows: number): Grid {

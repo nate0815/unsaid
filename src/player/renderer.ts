@@ -75,32 +75,41 @@ class Atlas {
 }
 
 export class Renderer {
-  private readonly canvas: HTMLCanvasElement
+  readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly layer = document.createElement('canvas')
   private readonly layerCtx = this.layer.getContext('2d')!
-  private readonly colorMap = document.createElement('canvas')
+  /** 每個 Grid 的色圖只建一次 —— 動圖每幾十毫秒換一格，不能每次重建。 */
+  private readonly colorMaps = new WeakMap<Grid, HTMLCanvasElement>()
   private readonly atlas = new Atlas()
   private grid: Grid | null = null
   private style: RenderStyle = { fg: '#e8e6e3', bg: '#0b0b0d', useColors: false }
   /** 格寬，CSS 像素。 */
   cellW = 0
 
-  constructor(canvas: HTMLCanvasElement) {
+  /** `readback`：之後會頻繁讀回像素（匯出 GIF）。會讓繪製改走 CPU，畫面上的播放不要開。 */
+  constructor(canvas: HTMLCanvasElement, opts: { readback?: boolean } = {}) {
     this.canvas = canvas
-    this.ctx = canvas.getContext('2d')!
+    this.ctx = canvas.getContext('2d', { willReadFrequently: !!opts.readback })!
   }
 
   setStyle(style: RenderStyle) {
     this.style = style
   }
 
+  /** 換要畫的格子。**不會重新排版** —— 尺寸變了要自己再呼叫 `fit`。 */
   setGrid(grid: Grid) {
     this.grid = grid
-    if (grid.colors) {
-      this.colorMap.width = grid.cols
-      this.colorMap.height = grid.rows
-      const ctx = this.colorMap.getContext('2d')!
+  }
+
+  private colorMap(grid: Grid): HTMLCanvasElement | null {
+    if (!grid.colors) return null
+    let map = this.colorMaps.get(grid)
+    if (!map) {
+      map = document.createElement('canvas')
+      map.width = grid.cols
+      map.height = grid.rows
+      const ctx = map.getContext('2d')!
       const img = ctx.createImageData(grid.cols, grid.rows)
       for (let i = 0; i < grid.cols * grid.rows; i++) {
         img.data[i * 4] = grid.colors[i * 3]
@@ -109,15 +118,16 @@ export class Renderer {
         img.data[i * 4 + 3] = 255
       }
       ctx.putImageData(img, 0, 0)
+      this.colorMaps.set(grid, map)
     }
+    return map
   }
 
   /** 把字元格縮放到塞得進 (maxW, maxH) 的 CSS 像素範圍（DESIGN「播放器呈現」：不出現橫向捲動）。 */
-  fit(maxW: number, maxH: number) {
+  fit(maxW: number, maxH: number, dpr = window.devicePixelRatio || 1) {
     const g = this.grid
     if (!g) return
-    const cellW = Math.max(1, Math.min(maxW / g.cols, maxH / (g.rows * CELL_ASPECT)))
-    const dpr = window.devicePixelRatio || 1
+    const cellW = Math.max(1 / dpr, Math.min(maxW / g.cols, maxH / (g.rows * CELL_ASPECT)))
     const cssW = cellW * g.cols
     const cssH = cellW * CELL_ASPECT * g.rows
     this.cellW = cellW
@@ -157,9 +167,10 @@ export class Renderer {
     }
     L.globalAlpha = 1
     L.globalCompositeOperation = 'source-in'
-    if (this.style.useColors && g.colors) {
+    const colorMap = this.style.useColors ? this.colorMap(g) : null
+    if (colorMap) {
       L.imageSmoothingEnabled = false
-      L.drawImage(this.colorMap, 0, 0, width, height)
+      L.drawImage(colorMap, 0, 0, width, height)
     } else {
       L.fillStyle = this.style.fg
       L.fillRect(0, 0, width, height)

@@ -180,6 +180,20 @@ button.primary {
   border-color: var(--accent);
 }
 
+.hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 1.5em;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+label[hidden] {
+  display: none;
+}
+
 .stage {
   position: relative;
   display: grid;

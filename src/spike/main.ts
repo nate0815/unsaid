@@ -5,9 +5,12 @@
  */
 
 import { adjust, COLS_MAX, COLS_MIN, layoutText, outlineChars, sampleImage, toDensity, toMessage, type Sample } from '../core/convert'
-import { emptyGrid, type Grid } from '../core/grid'
+import { clipDuration, emptyGrid, stillClip, type Clip, type Grid } from '../core/grid'
 import { buildInkTable, canvasInkMeasure } from '../core/ink'
+import { GifSource, isGif } from '../media/gif-decode'
+import { exportGif, GIF_MAX_SECONDS, suggestSeconds } from '../media/gif-export'
 import type { EffectKind, EffectSpec } from '../player/effects'
+import type { RenderStyle } from '../player/renderer'
 import { ScenePlayer } from '../player/scene-player'
 
 /* ─────────── 狀態 ─────────── */
@@ -36,6 +39,12 @@ interface State {
   bg: string
   useColors: boolean
   fx: Record<EffectKind, FxState>
+  gifWidth: number
+  gifFps: number
+  /** 自動決定長度（涵蓋進場特效、動圖一輪、持續特效）。 */
+  gifAuto: boolean
+  gifSeconds: number
+  gifLoop: boolean
 }
 
 const DEFAULTS: State = {
@@ -61,6 +70,11 @@ const DEFAULTS: State = {
     wave: { on: false, speed: 1, intensity: 0.4 },
     glitch: { on: false, speed: 1, intensity: 0.4 },
   },
+  gifWidth: 720,
+  gifFps: 15,
+  gifAuto: true,
+  gifSeconds: 4,
+  gifLoop: true,
 }
 
 const STORE_KEY = 'unsaid.spike.v1'
@@ -91,11 +105,10 @@ const state = loadState()
 
 /* ─────────── 圖片來源 ─────────── */
 
-interface Source {
-  img: CanvasImageSource
-  w: number
-  h: number
-}
+/** 靜態圖或 GIF 動圖。動圖不展開成像素存著，每次欄數改變才逐格重解（見 media/gif-decode）。 */
+type Source =
+  | { kind: 'still'; img: CanvasImageSource; w: number; h: number }
+  | { kind: 'gif'; gif: GifSource }
 
 /** 沒載圖時的範例：一顆帶漸層的心。程式畫的，repo 不必放圖檔。 */
 function sampleHeart(): Source {
@@ -125,15 +138,28 @@ function sampleHeart(): Source {
   ctx.fillStyle = fill
   ctx.fill()
   ctx.restore()
-  return { img: c, w, h }
+  return { kind: 'still', img: c, w, h }
 }
 
 let source: Source = sampleHeart()
 
 async function loadFile(file: File) {
-  if (!file.type.startsWith('image/')) return
-  const bmp = await createImageBitmap(file)
-  source = { img: bmp, w: bmp.width, h: bmp.height }
+  if (!file.type.startsWith('image/') && !/\.gif$/i.test(file.name)) return
+  const bytes = await file.arrayBuffer()
+  let next: Source | null = null
+  if (isGif(bytes)) {
+    try {
+      const gif = new GifSource(bytes)
+      if (gif.frameCount > 1) next = { kind: 'gif', gif }
+    } catch (e) {
+      console.warn('GIF 解析失敗，改用瀏覽器內建解碼（只取第一格）', e)
+    }
+  }
+  if (!next) {
+    const bmp = await createImageBitmap(new Blob([bytes], { type: file.type }))
+    next = { kind: 'still', img: bmp, w: bmp.width, h: bmp.height }
+  }
+  source = next
   sampleCache = null
   state.source = 'image'
   syncControls()
@@ -143,42 +169,65 @@ async function loadFile(file: File) {
 /* ─────────── 轉換 ─────────── */
 
 const measure = canvasInkMeasure()
-let sampleCache: { key: string; sample: Sample } | null = null
+let sampleCache: { cols: number; samples: Sample[] } | null = null
 
-function getSample(): Sample {
-  const key = `${state.cols}`
-  if (!sampleCache || sampleCache.key !== key) {
-    sampleCache = { key, sample: sampleImage(source.img, source.w, source.h, state.cols) }
+/** 每一格動畫各取一份樣本。只有欄數變了才重取 —— 亮度、對比等參數不用重解 GIF。 */
+function getSamples(): Sample[] {
+  if (sampleCache && sampleCache.cols === state.cols) return sampleCache.samples
+  let samples: Sample[]
+  if (source.kind === 'still') {
+    samples = [sampleImage(source.img, source.w, source.h, state.cols)]
+  } else {
+    const { gif } = source
+    const frame = document.createElement('canvas')
+    frame.width = gif.width
+    frame.height = gif.height
+    const ctx = frame.getContext('2d')!
+    samples = []
+    gif.forEachFrame((rgba) => {
+      ctx.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, gif.width, gif.height), 0, 0)
+      samples.push(sampleImage(frame, gif.width, gif.height, state.cols))
+    })
   }
-  return sampleCache.sample
+  sampleCache = { cols: state.cols, samples }
+  return samples
 }
 
-function buildGrid(): Grid {
-  if (state.source === 'text') {
-    const body = layoutText(state.text, state.cols)
-    // 上下各留一列，字才不會貼著畫面邊緣。
-    const grid = emptyGrid(body.cols, body.rows + 2)
-    grid.cells.splice(body.cols, body.cells.length, ...body.cells)
-    return grid
-  }
-  const s = getSample()
-  const lum = adjust(s.lum, state)
-  let grid: Grid
-  if (state.mode === 'density') {
-    const table = buildInkTable(state.charset, measure)
-    const outline = state.outline ? outlineChars(lum, s.cols, s.rows, state.outlineThreshold) : undefined
-    grid = toDensity(lum, s.cols, s.rows, table, { outline })
-  } else {
-    grid = toMessage(lum, s.cols, s.rows, state.message, state)
-  }
-  grid.colors = s.rgb
+function textGrid(): Grid {
+  const body = layoutText(state.text, state.cols)
+  // 上下各留一列，字才不會貼著畫面邊緣。
+  const grid = emptyGrid(body.cols, body.rows + 2)
+  grid.cells.splice(body.cols, body.cells.length, ...body.cells)
   return grid
+}
+
+function buildClip(): Clip {
+  if (state.source === 'text') return stillClip(textGrid())
+  const samples = getSamples()
+  const table = state.mode === 'density' ? buildInkTable(state.charset, measure) : []
+  const frames = samples.map((s) => {
+    const lum = adjust(s.lum, state)
+    let grid: Grid
+    if (state.mode === 'density') {
+      const outline = state.outline ? outlineChars(lum, s.cols, s.rows, state.outlineThreshold) : undefined
+      grid = toDensity(lum, s.cols, s.rows, table, { outline })
+    } else {
+      grid = toMessage(lum, s.cols, s.rows, state.message, state)
+    }
+    grid.colors = s.rgb
+    return grid
+  })
+  return source.kind === 'gif' ? { frames, delays: source.gif.delays.slice() } : stillClip(frames[0])
 }
 
 function effects(): EffectSpec[] {
   return (Object.keys(state.fx) as EffectKind[])
     .filter((k) => state.fx[k].on)
     .map((k) => ({ kind: k, speed: state.fx[k].speed, intensity: state.fx[k].intensity }))
+}
+
+function style(): RenderStyle {
+  return { fg: state.fg, bg: state.bg, useColors: state.useColors }
 }
 
 /* ─────────── 播放 ─────────── */
@@ -194,7 +243,7 @@ const player = new ScenePlayer(canvas, () => {
   }
 })
 
-let current: Grid = emptyGrid(1, 1)
+let current: Clip = stillClip(emptyGrid(1, 1))
 let pending = 0
 
 /** 合併同一幀內的多次變更 —— 拖拉桿時一秒會觸發幾十次。 */
@@ -203,9 +252,10 @@ function rebuild(restart = false) {
   if (pending) return
   pending = requestAnimationFrame(() => {
     pending = 0
-    current = buildGrid()
-    player.show(current, effects(), { fg: state.fg, bg: state.bg, useColors: state.useColors }, false)
+    current = buildClip()
+    player.show(current, effects(), style(), false)
     showStatus()
+    syncGifLength()
     saveState()
   })
 }
@@ -213,8 +263,10 @@ function rebuild(restart = false) {
 new ResizeObserver(() => player.resize()).observe(stage)
 
 function showStatus() {
-  const chars = current.cells.filter((c) => c.w > 0 && c.ch !== ' ').length
-  statusEl.textContent = `${current.cols} × ${current.rows} 格 · ${chars} 字 · 每幀繪製 ${player.lastDrawMs.toFixed(1)} ms`
+  const g = current.frames[0]
+  const chars = g.cells.filter((c) => c.w > 0 && c.ch !== ' ').length
+  const anim = current.frames.length > 1 ? ` · 動圖 ${current.frames.length} 格／${(clipDuration(current) / 1000).toFixed(1)} 秒` : ''
+  statusEl.textContent = `${g.cols} × ${g.rows} 格 · ${chars} 字${anim} · 每幀繪製 ${player.lastDrawMs.toFixed(1)} ms`
 }
 setInterval(showStatus, 500)
 
@@ -323,7 +375,7 @@ function button(text: string, onClick: () => void, primary = false) {
 const S = () => state as Obj
 const isImage = () => state.source === 'image'
 
-const fileInput = el('input', { type: 'file', accept: 'image/*', hidden: true })
+const fileInput = el('input', { type: 'file', accept: 'image/*,.gif', hidden: true })
 fileInput.addEventListener('change', () => fileInput.files?.[0] && loadFile(fileInput.files[0]))
 
 group(
@@ -412,19 +464,81 @@ for (const [kind, name, cat] of FX) {
   )
 }
 
+function download(blob: Blob, name: string) {
+  const a = el('a', { href: URL.createObjectURL(blob), download: name })
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+function select(label: string, key: 'gifWidth' | 'gifFps', options: [number, string][]) {
+  const input = el('select')
+  for (const [v, text] of options) input.append(el('option', { value: String(v), textContent: text }))
+  input.addEventListener('change', () => {
+    state[key] = +input.value
+    saveState()
+  })
+  syncers.push(() => (input.value = String(state[key])))
+  return el('label', { className: 'row wide' }, label, input)
+}
+
+/** 自動長度：跟著畫面內容重算，並把拉桿推到那個值。 */
+function syncGifLength() {
+  if (!state.gifAuto) return
+  state.gifSeconds = suggestSeconds(current, effects())
+  gifLengthSync()
+}
+
+const gifLength = range('長度（秒）', S, 'gifSeconds', 0, GIF_MAX_SECONDS, 0.1)
+const gifLengthSync = syncers[syncers.length - 1]
+const gifInfo = el('p', { className: 'hint' })
+const gifButton = button('匯出 GIF', async () => {
+  gifButton.disabled = true
+  try {
+    const opts = { width: state.gifWidth, fps: state.gifFps, seconds: state.gifSeconds, loop: state.gifLoop }
+    const blob = await exportGif(current, effects(), style(), opts, (done, total) => {
+      gifInfo.textContent = `錄製中… ${done} / ${total} 格`
+    })
+    gifInfo.textContent = `完成：${(blob.size / 1024 / 1024).toFixed(2)} MB`
+    download(blob, 'unsaid.gif')
+  } catch (e) {
+    gifInfo.textContent = `匯出失敗：${e instanceof Error ? e.message : e}`
+    throw e
+  } finally {
+    gifButton.disabled = false
+  }
+}, true)
+
+group(
+  '匯出 GIF',
+  undefined,
+  select('寬度', 'gifWidth', [
+    [480, '480 px（小檔）'],
+    [720, '720 px'],
+    [1080, '1080 px（清楚，檔案大）'],
+  ]),
+  select('每秒格數', 'gifFps', [
+    [10, '10'],
+    [15, '15'],
+    [20, '20（順，檔案大）'],
+  ]),
+  check('自動長度', S, 'gifAuto'),
+  gifLength,
+  check('循環播放', S, 'gifLoop'),
+  el('div', { className: 'buttons' }, gifButton),
+  gifInfo
+)
+visibility.push([gifLength, () => !state.gifAuto])
+// 自動長度一開，立刻重算一次。
+syncers.push(() => {
+  if (state.gifAuto) syncGifLength()
+})
+
 controls.append(
   el(
     'div',
     { className: 'buttons' },
     button('重播', () => player.replay(), true),
-    button('存成圖片', () =>
-      canvas.toBlob((blob) => {
-        if (!blob) return
-        const a = el('a', { href: URL.createObjectURL(blob), download: 'unsaid-spike.png' })
-        a.click()
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-      })
-    ),
+    button('存成 PNG', () => canvas.toBlob((blob) => blob && download(blob, 'unsaid.png'))),
     button('重設參數', () => {
       Object.assign(state, structuredClone(DEFAULTS))
       syncControls()
