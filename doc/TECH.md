@@ -86,6 +86,10 @@ npm run build     # 型別檢查＋建置
 | 7 | **`core/` 只 import `core/`；`player/` 只 import `core/`、`player/`；兩者都不准有套件相依**（`media/` 可以用套件，但 `core`／`player` 不得 import 它） | `src/core/**`、`src/player/**`；由 `tests/boundaries.test.ts` 把關 | 播放器整份內嵌進匯出檔時跟著帶進相依，匯出檔變肥、預覽與成品開始不一致 |
 | 8 | **同一個 `Clip` 的每一格 `cols × rows` 必須相同** | `src/core/grid.ts` `Clip`；`src/player/scene-player.ts` `tick`（換格只 `setGrid`、不重新 `fit`） | 尺寸不同的格子被畫進舊的畫布尺寸：字被裁掉或擠在角落，只在動圖播到那一格時出現 |
 | 9 | **GIF 匯出用同一個 `Renderer` 在畫面外逐格推進時間，不錄螢幕** | `src/media/gif-export.ts` `exportGif` | 改成錄螢幕會掉格、受視窗大小影響，匯出的 GIF 就和預覽不一致 |
+| 10 | **編輯器的整則訊息預覽 = 把匯出的 HTML 本身放進 iframe**，不是另外呼叫播放器模組 | `src/spike/main.ts` `openPreview`；之後的編輯器同理 | 預覽與對方看到的開始分岔（例如打包設定、內嵌資料的解碼），而且看起來都正常 |
+| 11 | **專案資料放進 `<script>` 一律經過 `jsonForScript`**（跳脫 `<`、U+2028、U+2029） | `src/core/project.ts` `jsonForScript`、`src/media/export-html.ts` `buildHtml` | 訊息裡有 `</script>` 時，匯出檔從那裡斷掉，對方打開只看到半頁或一片黑 |
+| 12 | **存檔格式一改就加 `FORMAT_VERSION`，並在 `MIGRATIONS` 補上從舊版升上來的函式** | `src/core/project.ts` `FORMAT_VERSION`、`MIGRATIONS` | 舊的專案檔／匯出檔打不開，或更糟：打得開但內容被讀錯（DESIGN「專案存檔」要求舊檔能開） |
+| 13 | **播放器的 CSS 必須保留 `.u-root [hidden]{display:none!important}`** | `src/player/app.ts` `CSS` | 有設 `display` 的元素（`.u-start` 等）`hidden` 會失效：「點一下開始」一直疊在畫面上，但 `hidden` 屬性看起來是對的 |
 
 > **「保護哪個檔／符號」這一欄不要留白。** AI 犯「架構與既有慣例不一致」的錯，
 > 是在**讀程式碼**的時候犯的，不是在讀這一節的時候。填了這欄，它動那個檔之前
@@ -180,5 +184,18 @@ npm run build     # 型別檢查＋建置
 - （→ §9 刻意沒做的事）GIF 匯出在主執行緒跑，不用 Web Worker —— 720 px、數十格約一秒內完成；要做長片或大尺寸再搬
 - （→ §9 刻意沒做的事）訊息填充模式的動圖：每一格都從句子開頭填起，字會隨亮處移動而流動，不追蹤「同一個字在哪」
 - （→ §8 驗證）`.github/workflows/pages.yml`：PR 跑 `npm test` ＋ `npm run build`（不部署）；推到 `main` 再多做上傳與部署。`concurrency` 依分支分組，PR 的檢查不會取消 `main` 的部署
+- （→ §0 檔案清單）`src/core/project.ts`：專案資料型別（`Project`、四種 node、`EffectSpec`）、`validateProject`、存檔格式（`ProjectFile`）與 `encode*`／`decode*`、`jsonForScript`、`extractProjectFile`。`EffectSpec` 的正本在這裡，`player/effects.ts` 轉出
+- （→ §0 檔案清單）`src/player/flow.ts`（`Flow`：純邏輯的流程推進）、`src/player/app.ts`（`mountPlayer`：DOM、起始畫面、Choice 疊加、End、輸入）、`src/player/main.ts`（匯出檔的進入點）
+- （→ §0 檔案清單）`src/media/export-html.ts`（`buildHtml`）、`src/media/virtual-player.d.ts`；`tools/player-bundle.ts`（`buildPlayer`、`playerBundlePlugin`、`PLAYER_BUDGET_KB`）；`src/spike/demo.ts`（示範訊息、`drawHeart`）
+- （→ §3 資料契約）`ProjectFile = { format: 'unsaid', version: 1, cellAspect, title, nodes }`。Scene 的 `layers` 存成 `ClipFile = { cols, rows, frames: GridFile[], delays? }`；`GridFile = { text: string[]（每列一字串，全形字只寫一次、空格 = 沒字）, alpha?（base64，每格 0～255，全不透明時省略）, colors?（base64 rgb） }`
+- （→ §3 資料契約）node 之間用 `next`（Start、Scene）與 `options[].next`（Choice）連；`null` = 沒接。Scene 的 `advance` 是 `{ mode: 'click' }` 或 `{ mode: 'auto', seconds }`
+- （→ §4 模組契約）`Flow`：`begin()`／`advance()`／`choose(i)` 回傳下一步；`lastScene` 給 Choice 疊加用；壞連結一律走到一個空的 End，不拋錯；Start 被接回來就從頭
+- （→ §4 模組契約）`mountPlayer`：點擊／空白鍵／Enter —— 進場特效沒播完先跳到播完，播完才推進；`auto` 的 Scene 等 `max(seconds, 進場長度)` 自動推進、不吃點擊推進；Choice 時 `ScenePlayer.pause()` 凍結、`.choosing` 變暗；數字鍵選、方向鍵移 focus；End 用打字機排出結尾文字，`replay` 才有「重看」
+- （→ §4 模組契約）匯出 HTML：`<script type="application/json" id="unsaid-data">` ＋ 打包好的播放器（`virtual:unsaid-player`，由 `playerBundlePlugin` 在建置／開發時即時打包）。分頁標題用訊息自己的標題（預設「一則訊息」），不放工具名
+- （→ §4 模組契約）`ScenePlayer` 加了 `elapsed()`、`seek(t)`、`pause()`、`enterDuration()`
+- （→ §7 數值）`PLAYER_BUDGET_KB`（`tools/player-bundle.ts`，目前 40）；`CHOICE_MIN/MAX`、`FORMAT_VERSION`（`core/project.ts`）；`POLL_MS`（`player/app.ts`）
+- （→ §8 驗證）`tests/project.test.ts`（字元格與專案的存讀來回、驗證、`</script>` 跳脫、Flow）；`tests/player-bundle.test.ts`（打包 ≤ 40 KB、只含 core／player、沒有 `</script`）。目前打包 14.8 KB
+- （→ §8 驗證）瀏覽器端的整條流程（spike 預覽走分支一、匯出檔斷網開啟用鍵盤走分支二、手機尺寸）目前靠臨時腳本；**真手機實測要人做**
+- （→ §9 刻意沒做的事）匯出檔的專案資料沒有壓縮 —— 實測 gzip 可縮到約 1/9，但播放器要改成非同步啟動，等 Chiao 看過數字再決定
 - （→ §9 刻意沒做的事）原圖色模式下，波浪／故障的位移不帶著顏色走（色圖固定在格子上）—— 位移不到一格，相鄰色相近，看不出來；要修得逐格上色，200 欄會掉幀
 - （→ §9 刻意沒做的事）輪廓只在密度模式生效 —— 描邊字元插進句子會破壞訊息填充模式的可讀性
