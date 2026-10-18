@@ -29,6 +29,7 @@ import { buildHtml } from '../media/export-html'
 import { renderSource } from '../media/render-source'
 import {
   addNode,
+  addOption,
   canConnect,
   connect,
   disconnect,
@@ -42,6 +43,7 @@ import {
 } from './graph'
 import { Inspector } from './Inspector'
 import { nodeTypes, type RFNode } from './nodes'
+import { SceneEditor } from './SceneEditor'
 import { backupBroken, loadAutosave, saveAutosave } from './storage'
 
 const AUTOSAVE_MS = 500
@@ -76,6 +78,8 @@ function Preview({ html, onClose }: { html: string; onClose: () => void }) {
 function Editor({ initial }: { initial: Project }) {
   const [project, setProject] = useState(initial)
   const [selected, setSelected] = useState<string | null>(null)
+  /** 雙擊打開的 Scene 編輯畫面（DESIGN「系統元件」的 Scene 編輯面板）。 */
+  const [editing, setEditing] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [status, setStatus] = useState('')
   const flow = useReactFlow()
@@ -122,17 +126,25 @@ function Editor({ initial }: { initial: Project }) {
   const problemNodes = useMemo(() => new Set(problems.map((p) => p.node).filter(Boolean)), [problems])
 
   /* ── 專案 ⇄ React Flow ── */
+  // React Flow 量好的 node 尺寸。每次重繪都要帶回去：少了 `measured`，React Flow 會把 node 當成沒量過，
+  // 先隱藏、再重量一次 —— 拖曳時每一格都這樣，畫面就會閃（TECH「不變式」）。
+  const measured = useRef(new Map<string, { width: number; height: number }>())
   const rfNodes: RFNode[] = project.nodes.map((n) => ({
     id: n.id,
     type: n.type,
     position: project.layout?.[n.id] ?? { x: 0, y: 0 },
-    data: { node: n, problem: problemNodes.has(n.id) },
+    measured: measured.current.get(n.id),
+    data: { node: n, problem: problemNodes.has(n.id), onAddOption: n.type === 'choice' ? () => setProject((p) => updateNode(p, n.id, addOption)) : undefined },
     selected: n.id === selected,
     deletable: n.type !== 'start',
   }))
   const rfEdges = projectEdges(project).map((e) => ({ ...e, selected: false }))
 
   const onNodesChange = useCallback((changes: NodeChange<RFNode>[]) => {
+    for (const c of changes) {
+      if (c.type === 'dimensions' && c.dimensions) measured.current.set(c.id, c.dimensions)
+      if (c.type === 'remove') measured.current.delete(c.id)
+    }
     const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [{ id: c.id, pos: c.position }] : []))
     const removed = changes.flatMap((c) => (c.type === 'remove' ? [c.id] : []))
     if (moves.length || removed.length) {
@@ -208,6 +220,7 @@ function Editor({ initial }: { initial: Project }) {
 
   const selectedNode = project.nodes.find((n) => n.id === selected) ?? null
   const patch = (fn: (n: FlowNode) => FlowNode) => selected && setProject((p) => updateNode(p, selected, fn))
+  const editingNode = project.nodes.find((n) => n.id === editing) ?? null
 
   return (
     <div className="editor">
@@ -243,6 +256,8 @@ function Editor({ initial }: { initial: Project }) {
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onPaneClick={() => setSelected(null)}
+          onNodeDoubleClick={(_, n) => n.type === 'scene' && setEditing(n.id)}
+          zoomOnDoubleClick={false}
           deleteKeyCode={['Delete', 'Backspace']}
           defaultEdgeOptions={{ animated: true }}
           fitView
@@ -274,6 +289,9 @@ function Editor({ initial }: { initial: Project }) {
       </footer>
 
       {preview && <Preview html={preview} onClose={() => setPreview(null)} />}
+      {editingNode?.type === 'scene' && (
+        <SceneEditor node={editingNode} patch={(fn) => setProject((p) => updateNode(p, editingNode.id, fn))} onClose={() => setEditing(null)} />
+      )}
     </div>
   )
 }

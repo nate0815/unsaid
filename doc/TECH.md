@@ -127,6 +127,7 @@ npm run build     # 型別檢查＋建置
 | 14 | **Scene 的 `source` 只能整個換新物件（不可變更新），不能就地改它的欄位** | `src/editor/App.tsx` 的 `rendered`（`WeakSet<SceneSource>`）、`src/editor/Inspector.tsx` 的 `patch` | 就地改參數不會觸發重新轉換：面板上的數字變了，畫面卻停在舊的，而且重新整理後才「突然好了」 |
 | 15 | **原圖（`source`）與版面（`layout`）不得進匯出的 HTML**：匯出一律 `encodeProject(p, { forExport: true })` | `src/media/export-html.ts` `buildHtml`、`src/core/project.ts` `encodeProject`；`tests/graph.test.ts` 把關 | 對方手上的檔案帶著製作者的原始照片（DESIGN「匯出」明定不含），檔案也大上好幾倍；畫面看起來完全正常 |
 | 16 | **刪 node 一律經過 `removeNodes`**（它會把指向被刪 node 的連線清成「沒接」） | `src/editor/graph.ts` `removeNodes`、`src/editor/App.tsx` `onNodesChange` | 留下指向不存在 node 的連線：驗證會報、但若繞過驗證匯出，播放器走到那裡會直接跳到空白結尾 |
+| 17 | **餵給 React Flow 的 node 物件必須帶上 `measured`**（從 `onNodesChange` 的 `dimensions` 變更記下來）。專案是唯一狀態，每次重繪都重建 node 物件，少了這欄 React Flow 就當成沒量過 | `src/editor/App.tsx` 的 `measured`、`rfNodes`、`onNodesChange` | 拖曳 node 時整張圖一直閃（每一格都先隱藏、重量、再顯示），操作照樣能用，所以容易被當成「效能不好」 |
 
 > **「保護哪個檔／符號」這一欄不要留白。** AI 犯「架構與既有慣例不一致」的錯，
 > 是在**讀程式碼**的時候犯的，不是在讀這一節的時候。填了這欄，它動那個檔之前
@@ -212,4 +213,8 @@ npm run build     # 型別檢查＋建置
 
 ### 10.2 目前收件匣
 
-（空 —— 2026-10-18 M3 發 PR 前整併）
+- （→ 檔案清單）`src/editor/SceneEditor.tsx`：Scene 編輯畫面。流程圖上雙擊 Scene 打開；左邊用 `ScenePlayer` 即時播放（含特效，點一下重播），右邊直接重用 `Inspector.tsx` 匯出的 `SceneInspector`（傳 `hideThumb`）。Esc／點背景／「完成」關閉
+- （→ 模組契約）特效清單一變，Scene 編輯畫面的預覽從頭播；只改轉換參數或顏色時沿用時間（`ScenePlayer.show(..., restart=false)`），跟 spike 拉拉桿的行為一致
+- （→ 模組契約）`FlowData.onAddOption`：Choice node 上的「＋」呼叫它，由 `App.tsx` 接成 `updateNode(p, id, addOption)`。按鈕帶 `nodrag`，並擋掉 click／dblclick 冒泡
+- （→ 模組契約）`ChoiceView` 在選項數變動時呼叫 `useUpdateNodeInternals` —— 出口 handle 增減後要重量位置，新出口才接得到線
+- （→ ?）React Flow 關掉 `zoomOnDoubleClick`，雙擊只用來開 Scene 編輯畫面
