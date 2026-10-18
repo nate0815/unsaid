@@ -252,3 +252,25 @@ label[hidden] {
     grid-row: 3;
   }
 }
+
+.preview {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.85);
+}
+.preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #000;
+}
+.preview button {
+  justify-self: center;
+  flex: none;
+}

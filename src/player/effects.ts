@@ -6,16 +6,10 @@
  */
 
 import type { Grid } from '../core/grid'
+import type { EffectSpec } from '../core/project'
 
-export type EffectKind = 'typewriter' | 'decode' | 'wave' | 'glitch'
-
-export interface EffectSpec {
-  kind: EffectKind
-  /** 0.1～3，1 為預設速度。 */
-  speed: number
-  /** 0～1。 */
-  intensity: number
-}
+// 型別的正本在 core/project（它是存檔格式的一部分）；這裡轉出去，舊的 import 路徑照用。
+export type { EffectKind, EffectSpec } from '../core/project'
 
 /** 這一幀的一格。dx/dy 以「格」為單位，由 renderer 換成像素。 */
 export interface FrameCell {
