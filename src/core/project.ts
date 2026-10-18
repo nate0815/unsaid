@@ -45,6 +45,53 @@ export interface SceneNode {
   effects: EffectSpec[]
   advance: Advance
   next: string | null
+  /** 圖層是怎麼做出來的（原圖＋轉換參數），讓編輯器能隨時重調（DESIGN「專案存檔」）。
+   *  **只存在專案檔，匯出 HTML 時拿掉** —— 對方手上的檔案不含原圖。從 HTML 取回的專案沒有它。 */
+  source?: SceneSource
+}
+
+/* ─────────── 圖層來源（編輯器用；匯出 HTML 不含） ─────────── */
+
+export interface ConvertParams {
+  mode: 'message' | 'density'
+  /** 訊息填充模式要填的話。 */
+  message: string
+  /** 密度模式的字元組。 */
+  charset: string
+  cols: number
+  brightness: number
+  contrast: number
+  invert: boolean
+  outline: boolean
+  outlineThreshold: number
+  threshold: number
+  minAlpha: number
+}
+
+export const DEFAULT_PARAMS: ConvertParams = {
+  mode: 'message',
+  message: '有些話我一直沒有說出口。謝謝你，一直都在。',
+  charset: ' .:-=+*#%@',
+  cols: 80,
+  brightness: 0,
+  contrast: 1.2,
+  invert: false,
+  outline: false,
+  outlineThreshold: 0.25,
+  threshold: 0.2,
+  minAlpha: 0.35,
+}
+
+export type LayerSource =
+  /** 縮小過的靜態圖（長邊 ≤ 800 px），data URL。 */
+  | { kind: 'image'; image: string }
+  /** GIF 原檔，base64。 */
+  | { kind: 'gif'; gif: string }
+  | { kind: 'text'; text: string }
+
+export interface SceneSource {
+  layer: LayerSource
+  params: ConvertParams
 }
 
 export interface ChoiceOption {
@@ -71,6 +118,8 @@ export type FlowNode = StartNode | SceneNode | ChoiceNode | EndNode
 export interface Project {
   title: string
   nodes: FlowNode[]
+  /** 流程圖上每個 node 的位置。編輯器用，匯出 HTML 時拿掉。 */
+  layout?: Record<string, { x: number; y: number }>
 }
 
 export const CHOICE_MIN = 2
@@ -123,7 +172,7 @@ export function validateProject(p: Project): Problem[] {
 
 export const FORMAT = 'unsaid'
 /** 存檔格式版本。**改了格式就加一，並在 `MIGRATIONS` 補上從舊版升上來的函式**（DESIGN「專案存檔」：舊檔要打得開）。 */
-export const FORMAT_VERSION = 1
+export const FORMAT_VERSION = 2
 
 /** 一格字元格的存檔形式。 */
 export interface GridFile {
@@ -153,10 +202,14 @@ export interface ProjectFile {
   cellAspect: number
   title: string
   nodes: FlowNodeFile[]
+  layout?: Project['layout']
 }
 
-/** 舊版 → 新版。key 是「從哪一版升上來」。v1 是第一版，目前沒有。 */
-const MIGRATIONS: Record<number, (f: any) => any> = {}
+/** 舊版 → 新版。key 是「從哪一版升上來」。 */
+const MIGRATIONS: Record<number, (f: any) => any> = {
+  // v1 → v2：加了 Scene 的 `source` 與專案的 `layout`，兩者都可省略 —— v1 的檔案原樣就是合法的 v2。
+  1: (f) => ({ ...f, version: 2 }),
+}
 
 export class ProjectFormatError extends Error {}
 
@@ -237,14 +290,23 @@ export function decodeClip(f: ClipFile): Clip {
 
 /* ─── Project ⇄ ProjectFile ─── */
 
-export function encodeProject(p: Project): ProjectFile {
-  return {
+/** `forExport`：要放進匯出 HTML —— 拿掉原圖（`source`）與編輯器的版面（`layout`）。 */
+export function encodeProject(p: Project, opts: { forExport?: boolean } = {}): ProjectFile {
+  const file: ProjectFile = {
     format: FORMAT,
     version: FORMAT_VERSION,
     cellAspect: CELL_ASPECT,
     title: p.title,
-    nodes: p.nodes.map((n) => (n.type === 'scene' ? { ...n, layers: n.layers.map(encodeClip) } : n)),
+    nodes: p.nodes.map((n) => {
+      if (n.type !== 'scene') return n
+      const { source, ...rest } = n
+      const out: SceneNodeFile = { ...rest, layers: n.layers.map(encodeClip) }
+      if (source && !opts.forExport) out.source = source
+      return out
+    }),
   }
+  if (p.layout && !opts.forExport) file.layout = p.layout
+  return file
 }
 
 export function decodeProject(raw: unknown): Project {
@@ -257,10 +319,12 @@ export function decodeProject(raw: unknown): Project {
     if (!up) throw new ProjectFormatError(`不認得 v${f.version} 的專案檔`)
     f = up(f)
   }
-  return {
+  const project: Project = {
     title: f.title ?? '',
     nodes: f.nodes.map((n) => (n.type === 'scene' ? { ...n, layers: n.layers.map(decodeClip) } : n)) as FlowNode[],
   }
+  if (f.layout) project.layout = f.layout
+  return project
 }
 
 /* ─── 匯出 HTML 裡的專案資料 ─── */

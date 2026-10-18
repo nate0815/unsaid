@@ -19,6 +19,7 @@
 | 版本 | 日期 | 變更 | 原因 |
 |---|---|---|---|
 | v0.1 | 2026-10-18 | 初版：技術方向、架構、M0～M5 排程、風險、驗收 | 構想討論定案（見 [devlog](devlog/2026-10-18.md)） |
+| v0.6 | 2026-10-18 | 「架構」：首頁換成流程編輯器，spike 改名 Scene 工作室（`spike.html`）並延到 M4 才移除；`media/` 加圖層來源轉換 | M3 實作；spike 的調參介面要等 M4 併進 Scene 編輯面板 |
 | v0.5 | 2026-10-18 | 「架構」加入 `tools/`（播放器打包）、`media/` 加 HTML 匯出；「風險與應對」的字型與匯出大小寫入 M2 的量測結果 | M2 實作：播放器要打包成單一 JS 內嵌；兩個大小相關風險已有數據 |
 | v0.4 | 2026-10-18 | GIF 讀寫從「spike」升為正式路線；排程 M2 加入動圖圖層與「動圖計入匯出大小」的量測，M4 加入單一 Scene 匯出 GIF | DESIGN v0.2 把 GIF 動圖輸入與單一 Scene GIF 匯出寫進規格 |
 | v0.3 | 2026-10-18 | 「架構」加入 `src/media/`（GIF 讀寫，可用套件）；「技術方向結論」加 GIF 讀寫一列 | Chiao 試完 M1 的回饋：效果動起來最好，要能讀 GIF 動圖、輸出 GIF |
@@ -66,10 +67,10 @@
 src/
   core/     共用：專案資料型別、字元格、圖片轉字元、字形量測   ← 零相依
   player/   播放器：繪製、特效、流程推進、輸入                ← 只能用 core
-  editor/   編輯器：React ＋ React Flow、Scene 面板、存檔、匯出  ← 可用 core、player
+  editor/   流程編輯器（首頁 index.html）：React ＋ React Flow、屬性面板、自動存檔、預覽、匯出  ← 可用任何東西
   media/    匯出入：GIF 解碼／編碼、HTML 匯出（可用套件）        ← 可用 core、player；core／player 不得 import 它
 tools/      建置工具：把 player 打包成單一 JS（虛擬模組 virtual:unsaid-player）
-  spike/    M1 試作頁：拉桿調參數，原生 DOM                   ← 可用 core、player、media；M3 後移除
+  spike/    Scene 工作室（試作，spike.html）：拉桿調參數，原生 DOM  ← 可用 core、player、media；M4 併進編輯器後移除
 ```
 
 資料流向是單向的：`editor` 產生專案資料 → `player` 讀專案資料播放。

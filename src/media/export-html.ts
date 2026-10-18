@@ -27,7 +27,7 @@ export function buildHtml(project: Project): string {
     '<style>html,body{margin:0;height:100%;background:#0b0b0d}</style>',
     '</head>',
     '<body>',
-    `<script type="application/json" id="${DATA_ELEMENT_ID}">${jsonForScript(encodeProject(project))}</script>`,
+    `<script type="application/json" id="${DATA_ELEMENT_ID}">${jsonForScript(encodeProject(project, { forExport: true }))}</script>`,
     `<script>${js}</script>`,
     '</body>',
     '</html>',

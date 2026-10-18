@@ -17,10 +17,18 @@
 
 ## 0. 檔案清單
 
-| 檔案 | 職責 | 行數 |
-|---|---|---|
-
-（尚無程式碼。預計的目錄切法見 [PLAN.md](PLAN.md)「架構」。）
+- `src/core/`：`width.ts` 字寬表與 `splitChars`；`grid.ts` 字元格型別、`CELL_ASPECT`、`putChar`；`glyph.ts` 單字繪製與字型堆疊；`ink.ts` 墨量表；`convert.ts` 取樣、亮度調整、輪廓、密度模式、訊息填充模式、純文字排版
+- `src/player/`：`effects.ts` 特效與 `SceneFrames`；`renderer.ts` Canvas 2D ＋ 字形圖集；`scene-player.ts` 單一畫面的 rAF 迴圈
+- `src/spike/`：M1 試作頁（原生 DOM），`index.html` 目前就是這頁；M3 會換成 React 編輯器
+- `start.bat`：Windows 一鍵啟動（缺 `node_modules` 先 `npm install`，再 `npm start`）。必須是 CRLF，由 `.gitattributes` 的 `*.bat` 例外保證
+- `src/media/`：編輯器那一側的媒體讀寫，可以用套件。`gif-decode.ts`（`GifSource`、`GifComposer`、`isGif`）用 gifuct-js 解碼；`gif-export.ts`（`exportGif`、`suggestSeconds`）用 gifenc 編碼；`gifenc.d.ts` 補型別
+- `src/player/clip-frames.ts`：`ClipFrames` = Clip 的每一格各一個 `SceneFrames`，依時間挑格
+- `src/core/project.ts`：專案資料型別（`Project`、四種 node、`EffectSpec`）、`validateProject`、存檔格式（`ProjectFile`）與 `encode*`／`decode*`、`jsonForScript`、`extractProjectFile`。`EffectSpec` 的正本在這裡，`player/effects.ts` 轉出
+- `src/player/flow.ts`（`Flow`：純邏輯的流程推進）、`src/player/app.ts`（`mountPlayer`：DOM、起始畫面、Choice 疊加、End、輸入）、`src/player/main.ts`（匯出檔的進入點）
+- `src/media/export-html.ts`（`buildHtml`）、`src/media/virtual-player.d.ts`；`tools/player-bundle.ts`（`buildPlayer`、`playerBundlePlugin`、`PLAYER_BUDGET_KB`）；`src/spike/demo.ts`（示範訊息、`drawHeart`）
+- `index.html` 是流程編輯器（`src/editor/main.tsx`）；`spike.html` 是 M1 的試作頁，改名「Scene 工作室（試作）」，M4 會併進編輯器。`vite.config.ts` 的 `build.rollupOptions.input` 列兩頁
+- `src/editor/`：`App.tsx`（編輯器主體：狀態、自動存檔、重新轉換、驗證、工具列、預覽）、`graph.ts`（流程圖的純函式操作）、`nodes.tsx`（四種 node 的外觀）、`Inspector.tsx`（屬性面板）、`Thumb.tsx`（字元畫面縮圖）、`storage.ts`（IndexedDB 自動存檔）、`editor.css`
+- `src/media/render-source.ts`：`renderSource`（來源＋參數 → Clip）、`gridsFromSamples`、`textGrid`、`gifSamples`、`sourceFromFile`。spike 與編輯器共用，不各寫一份
 
 ---
 
@@ -37,19 +45,33 @@ npm test          # 單元測試＋模組邊界檢查
 npm run build     # 型別檢查＋建置
 ```
 
-兩行都沒有紅字（`Tests ... passed`、`✓ built`）就是正常。要看畫面：`npm run dev`，瀏覽器開它印出的網址，預設會看到一顆由那句話填成的心。
+兩行都沒有紅字（`Tests ... passed`、`✓ built`）就是正常。要看畫面：`npm run dev`，瀏覽器開它印出的網址，會看到流程編輯器（新訊息是「開始 → Scene → 結尾」）；`/spike.html` 是 Scene 工作室，預設會看到一顆由那句話填成的心。
 
 ---
 
 ## 2. 執行流程（啟動順序）
 
-<誰先跑、誰依賴誰。>
+製作者端（編輯器）：
+
+1. `index.html` → `src/editor/main.tsx` → `App` 先讀 IndexedDB 的自動存檔（`decodeProject`，含版本遷移），沒有就 `newProject()`
+2. 編輯時只改 `Project`；Scene 的 `source` 一變 → `renderSource` 在背景轉成 `Clip` 寫回 `layers`；500 ms 後自動存檔
+3. 預覽／匯出 → `buildHtml(project)` = 範本 ＋ `encodeProject(p, { forExport: true })` ＋ 打包好的播放器（`virtual:unsaid-player`）。預覽把這份 HTML 放進 iframe
+
+觀看者端（匯出檔）：
+
+1. 瀏覽器載入 HTML → `src/player/main.ts` 讀 `<script id="unsaid-data">` → `decodeProject` → `mountPlayer`
+2. 「點一下開始」→ `Flow.begin()` → 依步驟顯示 Scene（`ScenePlayer` ＋ `ClipFrames` ＋ `Renderer`）、Choice（疊在上一個 Scene 上）、End
 
 ---
 
 ## 3. 核心資料契約 ⭐
 
-<跨模組傳遞的那個資料結構長什麼樣。欄位、型別、不變條件。>
+- `Grid = { cols, rows, cells: Cell[], colors?: Uint8ClampedArray }`，`cells` 逐列、長度恆為 cols×rows；`Cell = { ch, w: 0|1|2, a }`，`a` 是明顯程度 0～1；`colors` 每格 r,g,b
+- `Clip = { frames: Grid[], delays: number[] }`，`delays` 毫秒、播完循環；靜態圖用 `stillClip(grid)`（`delays: [Infinity]`）。`ScenePlayer.show` 收的是 Clip
+- `ProjectFile = { format: 'unsaid', version: 1, cellAspect, title, nodes }`。Scene 的 `layers` 存成 `ClipFile = { cols, rows, frames: GridFile[], delays? }`；`GridFile = { text: string[]（每列一字串，全形字只寫一次、空格 = 沒字）, alpha?（base64，每格 0～255，全不透明時省略）, colors?（base64 rgb） }`
+- node 之間用 `next`（Start、Scene）與 `options[].next`（Choice）連；`null` = 沒接。Scene 的 `advance` 是 `{ mode: 'click' }` 或 `{ mode: 'auto', seconds }`
+- 存檔格式 v2：Scene 多了選填的 `source = { layer, params }`（`layer` 是 `{ kind: 'image', image: dataURL }`／`{ kind: 'gif', gif: base64 原檔 }`／`{ kind: 'text', text }`；`params` 是 `ConvertParams`），專案多了選填的 `layout = { [nodeId]: { x, y } }`。v1 → v2 的遷移是原樣升版（兩個欄位都可省略）
+- `encodeProject(p, { forExport: true })` 拿掉 `source` 與 `layout` —— 匯出 HTML 只走這條（`buildHtml`）
 
 ---
 
@@ -58,13 +80,25 @@ npm run build     # 型別檢查＋建置
 > 一模組一節。每節寫三件事：**對外介面**、**誰能呼叫**、**不能做什麼**。
 > 「不能做什麼」最容易漏，也最容易被後人違反。
 
-### 4.1 `<模組名>`
-
-| 對外介面 | 作用 |
-|---|---|
-
-**誰能呼叫**：
-**不能做什麼**：
+- 轉換分兩段：`sampleImage`（碰瀏覽器，縮成每格一像素）→ 其餘皆純函式（`adjust`、`toDensity`、`toMessage`、`outlineChars`、`layoutText`），可在 node 測
+- 亮度慣例是「深色背景、亮字」：亮處墨量多／字明顯，要反過來用 `invert`
+- `toMessage`：亮度低於門檻的格子留空且不消耗字；全形字落在列尾放不下就留空、字留給下一格；話用完從頭循環；空白收成一個半形空格
+- `SceneFrames.frame(t)` 回傳的陣列每幀重用，呼叫端不能留著；特效疊加規則：`a` 相乘、`dx/dy` 相加、`ch` 後者覆蓋
+- `Renderer` 每幀：圖集貼白字到字形層 → `source-in` 一次上色（單色填色／原圖色貼每格一像素的色圖）→ 主畫布填背景再疊上
+- 兩條時間軸：圖層動畫依 `clipIndexAt` 循環；進場特效從畫面開始算，**不會因為圖層換格而重播**
+- GIF 讀取逐格解碼、用完即丟：欄數改變才重解一遍，只留每格的 `Sample`。最多取前 `GIF_MAX_FRAMES`（300）格；停留 ≤ 10 ms 當 100 ms（`normalizeDelay`，和瀏覽器一致）；用檔頭 `GIF8` 判斷，不信副檔名；只有一格或解析失敗就退回 `createImageBitmap` 當靜態圖
+- `GifComposer`：上一格的 disposal 在下一格貼上**之前**才生效（2 = 清成透明、3 = 還原）；透明像素不覆蓋
+- `exportGif`：畫面外的 `Renderer`（`readback: true`、dpr 1）依 `frameDelayMs(fps)`（對齊 1/100 秒）推進時間；全片共用一組 256 色調色盤，從最多 8 個時間點每 5 像素取樣；每 3 格讓出主執行緒一次
+- `Renderer`：`setGrid` 只換內容不重排版；色圖依 Grid 用 WeakMap 快取；`fit(maxW, maxH, dpr)` 可指定 dpr
+- `Flow`：`begin()`／`advance()`／`choose(i)` 回傳下一步；`lastScene` 給 Choice 疊加用；壞連結一律走到一個空的 End，不拋錯；Start 被接回來就從頭
+- `mountPlayer`：點擊／空白鍵／Enter —— 進場特效沒播完先跳到播完，播完才推進；`auto` 的 Scene 等 `max(seconds, 進場長度)` 自動推進、不吃點擊推進；Choice 時 `ScenePlayer.pause()` 凍結、`.choosing` 變暗；數字鍵選、方向鍵移 focus；End 用打字機排出結尾文字，`replay` 才有「重看」
+- 匯出 HTML：`<script type="application/json" id="unsaid-data">` ＋ 打包好的播放器（`virtual:unsaid-player`，由 `playerBundlePlugin` 在建置／開發時即時打包）。分頁標題用訊息自己的標題（預設「一則訊息」），不放工具名
+- `ScenePlayer` 加了 `elapsed()`、`seek(t)`、`pause()`、`enterDuration()`
+- 編輯器只有一份狀態 `Project`；畫布的 nodes／edges、屬性面板、預覽、匯出都從它推出。Scene 的 `source` 物件一換（不可變更新），背景就重新 `renderSource`、把結果寫回 `layers`；回來時 `source` 已經又變了就丟掉結果
+- `graph.ts`：連線 = 改 `next`／`options[i].next`，一個出口一條線、新的取代舊的；`canConnect` 擋「結尾往外接、接回 Start、接自己」；`removeNodes` 一併把指向被刪 node 的連線清成 `null`，Start 刪不掉；Choice 選項 2～8 個，刪中間的選項後面往前遞補；`freeSpot` 從指定位置往下找不重疊的空位；`ensureLayout` 給沒有位置的 node 排一列
+- 自動存檔：專案變動後 500 ms 存一次 `encodeProject(project)`（含原圖）到 IndexedDB `unsaid`／`projects`／`autosave`。讀不回來就先把原始資料另存成 `broken-<時間>` 再開新專案
+- `sourceFromFile`：GIF 動圖（多於一格）保留原檔；其他圖縮到長邊 `SOURCE_MAX_SIDE`，PNG 維持 PNG、其餘存 JPEG 0.9
+- 新增 node：有選取的 node 就放在它右邊 280，沒有就放畫面中央；再經 `freeSpot` 避開既有的 node
 
 ---
 
@@ -90,6 +124,9 @@ npm run build     # 型別檢查＋建置
 | 11 | **專案資料放進 `<script>` 一律經過 `jsonForScript`**（跳脫 `<`、U+2028、U+2029） | `src/core/project.ts` `jsonForScript`、`src/media/export-html.ts` `buildHtml` | 訊息裡有 `</script>` 時，匯出檔從那裡斷掉，對方打開只看到半頁或一片黑 |
 | 12 | **存檔格式一改就加 `FORMAT_VERSION`，並在 `MIGRATIONS` 補上從舊版升上來的函式** | `src/core/project.ts` `FORMAT_VERSION`、`MIGRATIONS` | 舊的專案檔／匯出檔打不開，或更糟：打得開但內容被讀錯（DESIGN「專案存檔」要求舊檔能開） |
 | 13 | **播放器的 CSS 必須保留 `.u-root [hidden]{display:none!important}`** | `src/player/app.ts` `CSS` | 有設 `display` 的元素（`.u-start` 等）`hidden` 會失效：「點一下開始」一直疊在畫面上，但 `hidden` 屬性看起來是對的 |
+| 14 | **Scene 的 `source` 只能整個換新物件（不可變更新），不能就地改它的欄位** | `src/editor/App.tsx` 的 `rendered`（`WeakSet<SceneSource>`）、`src/editor/Inspector.tsx` 的 `patch` | 就地改參數不會觸發重新轉換：面板上的數字變了，畫面卻停在舊的，而且重新整理後才「突然好了」 |
+| 15 | **原圖（`source`）與版面（`layout`）不得進匯出的 HTML**：匯出一律 `encodeProject(p, { forExport: true })` | `src/media/export-html.ts` `buildHtml`、`src/core/project.ts` `encodeProject`；`tests/graph.test.ts` 把關 | 對方手上的檔案帶著製作者的原始照片（DESIGN「匯出」明定不含），檔案也大上好幾倍；畫面看起來完全正常 |
+| 16 | **刪 node 一律經過 `removeNodes`**（它會把指向被刪 node 的連線清成「沒接」） | `src/editor/graph.ts` `removeNodes`、`src/editor/App.tsx` `onNodesChange` | 留下指向不存在 node 的連線：驗證會報、但若繞過驗證匯出，播放器走到那裡會直接跳到空白結尾 |
 
 > **「保護哪個檔／符號」這一欄不要留白。** AI 犯「架構與既有慣例不一致」的錯，
 > 是在**讀程式碼**的時候犯的，不是在讀這一節的時候。填了這欄，它動那個檔之前
@@ -97,12 +134,16 @@ npm run build     # 型別檢查＋建置
 
 ---
 
-## 6. 怎麼加一個新的 <常見擴充>
+## 6. 怎麼加一個新的特效
 
 > 把「照抄就能加」的步驟寫下來，省下每次重新推導。
 
-1.
-2.
+1. `src/core/project.ts` 的 `EffectKind` 加上名字（它是存檔格式的一部分 —— 只加不改名，否則舊檔讀不回來）
+2. `src/player/effects.ts`：在 `SceneFrames.frame` 的 `switch` 加一支，只改 `ch`／`a`／`dx`／`dy`；**亂碼要用同寬的字、`w:0` 右半格跟著左半格動**（「不變式」#4）。進場類要在 `enterDuration` 回報長度
+3. 持續類若要讓 GIF 匯出錄久一點，`src/media/gif-export.ts` 的 `suggestSeconds` 把它算進 `sustain`
+4. 面板：`src/editor/Inspector.tsx` 的 `FX`／`FX_DEFAULT`、`src/spike/main.ts` 的 `FX` 與 `DEFAULTS.fx`
+5. `tests/effects.test.ts` 補：結束後回到原字、字寬不變、全形字不裂開
+6. `npm test` 的播放器打包檢查會確認它沒有把大小撐破
 
 ---
 
@@ -110,14 +151,22 @@ npm run build     # 型別檢查＋建置
 
 > 所有可調數值的**唯一宣告處**在哪個檔。這裡只列對照表，不重複寫值。
 
-| 參數 | 位置 | 影響什麼 |
-|---|---|---|
+- 可調值的宣告處：`COLS_MIN/MAX`（`convert.ts`）、`FONT_SCALE`（`glyph.ts`）、特效時長與振幅（`effects.ts` 的 `typewriterDur`、`decodeDur`、`wave`、`glitch`）、spike 預設值（`spike/main.ts` `DEFAULTS`）
+- `GIF_MAX_FRAMES`（`gif-decode.ts`）；`GIF_MAX_SECONDS`、`SUSTAIN_MIN_SECONDS`、`HOLD_SECONDS`（`gif-export.ts`）
+- `PLAYER_BUDGET_KB`（`tools/player-bundle.ts`，目前 40）；`CHOICE_MIN/MAX`、`FORMAT_VERSION`（`core/project.ts`）；`POLL_MS`（`player/app.ts`）
+- `AUTOSAVE_MS`、`RERENDER_MS`（`editor/App.tsx`）；`SOURCE_MAX_SIDE`（`media/render-source.ts`，DESIGN 的假值 800）；`NODE_W`／`NODE_H`（`editor/graph.ts`，只用來找空位）
 
 ---
 
 ## 8. 驗證與回歸
 
-<怎麼證明「沒有壞掉」。指令、判準、哪些項目天生不穩定要排除。>
+- `npm test`：字寬、轉換、特效、模組邊界共 32 項；部署 workflow（`.github/workflows/pages.yml`）測試沒過就不部署。瀏覽器端（繪製、拖放、手機版面）目前沒有自動化，靠人工或臨時腳本
+- `npm start` = `vite --open`；`npm run phone` = `vite --host --open`，讓同網路的手機連進來
+- `tests/gif.test.ts`：GIF 疊合規則、gifenc 編→解來回一致、Clip 時間軸、匯出時間設定。瀏覽器端的「上傳動圖 → 播放會動 → 匯出 GIF → 解回來檢查」目前靠臨時腳本
+- `.github/workflows/pages.yml`：PR 跑 `npm test` ＋ `npm run build`（不部署）；推到 `main` 再多做上傳與部署。`concurrency` 依分支分組，PR 的檢查不會取消 `main` 的部署
+- `tests/project.test.ts`（字元格與專案的存讀來回、驗證、`</script>` 跳脫、Flow）；`tests/player-bundle.test.ts`（打包 ≤ 40 KB、只含 core／player、沒有 `</script`）。目前打包 14.8 KB
+- 瀏覽器端的整條流程（spike 預覽走分支一、匯出檔斷網開啟用鍵盤走分支二、手機尺寸）目前靠臨時腳本；**真手機實測要人做**
+- `tests/graph.test.ts`：連線、斷線、刪除清連線、Start 不能刪、選項上下限、空位、v2 存讀、v1 舊檔可開、**匯出 HTML 不含原圖與版面**。瀏覽器端（拖曳連線、換 GIF、預覽走完、重新整理後自動存檔還在、匯出不含原圖、刪除後擋匯出）目前靠臨時腳本
 
 > ⚠️ 這套驗證證明的是「**沒有壞掉**」，不是「好不好」。
 
@@ -127,8 +176,13 @@ npm run build     # 型別檢查＋建置
 
 > 防止後人「好心」補上你故意省掉的東西。每條都要寫**為什麼不做**。
 
-| 沒做 | 為什麼 |
-|---|---|
+- GIF 匯出在主執行緒跑，不用 Web Worker —— 720 px、數十格約一秒內完成；要做長片或大尺寸再搬
+- 訊息填充模式的動圖：每一格都從句子開頭填起，字會隨亮處移動而流動，不追蹤「同一個字在哪」
+- 匯出檔的專案資料沒有壓縮 —— 實測 gzip 可縮到約 1/9，但播放器要改成非同步啟動，等 Chiao 看過數字再決定
+- 原圖色模式下，波浪／故障的位移不帶著顏色走（色圖固定在格子上）—— 位移不到一格，相鄰色相近，看不出來；要修得逐格上色，200 欄會掉幀
+- 輪廓只在密度模式生效 —— 描邊字元插進句子會破壞訊息填充模式的可讀性
+- M3 的 Scene 屬性面板只放常用的參數（欄數、亮度、對比、門檻、反相、顏色、特效開關、推進方式）；輪廓、特效的速度與強度、逐格手修留給 M4 的 Scene 編輯面板 —— 現在做，M4 整合 spike 時要再拆一次
+- 編輯器沒有為手機排版優化（窄螢幕只是把屬性面板疊到下方）—— 製作者主要在電腦上做；播放器才需要手機
 
 ---
 
@@ -158,44 +212,4 @@ npm run build     # 型別檢查＋建置
 
 ### 10.2 目前收件匣
 
-- （→ §0 檔案清單）`src/core/`：`width.ts` 字寬表與 `splitChars`；`grid.ts` 字元格型別、`CELL_ASPECT`、`putChar`；`glyph.ts` 單字繪製與字型堆疊；`ink.ts` 墨量表；`convert.ts` 取樣、亮度調整、輪廓、密度模式、訊息填充模式、純文字排版
-- （→ §0 檔案清單）`src/player/`：`effects.ts` 特效與 `SceneFrames`；`renderer.ts` Canvas 2D ＋ 字形圖集；`scene-player.ts` 單一畫面的 rAF 迴圈
-- （→ §0 檔案清單）`src/spike/`：M1 試作頁（原生 DOM），`index.html` 目前就是這頁；M3 會換成 React 編輯器
-- （→ §3 資料契約）`Grid = { cols, rows, cells: Cell[], colors?: Uint8ClampedArray }`，`cells` 逐列、長度恆為 cols×rows；`Cell = { ch, w: 0|1|2, a }`，`a` 是明顯程度 0～1；`colors` 每格 r,g,b
-- （→ §4 模組契約）轉換分兩段：`sampleImage`（碰瀏覽器，縮成每格一像素）→ 其餘皆純函式（`adjust`、`toDensity`、`toMessage`、`outlineChars`、`layoutText`），可在 node 測
-- （→ §4 模組契約）亮度慣例是「深色背景、亮字」：亮處墨量多／字明顯，要反過來用 `invert`
-- （→ §4 模組契約）`toMessage`：亮度低於門檻的格子留空且不消耗字；全形字落在列尾放不下就留空、字留給下一格；話用完從頭循環；空白收成一個半形空格
-- （→ §4 模組契約）`SceneFrames.frame(t)` 回傳的陣列每幀重用，呼叫端不能留著；特效疊加規則：`a` 相乘、`dx/dy` 相加、`ch` 後者覆蓋
-- （→ §4 模組契約）`Renderer` 每幀：圖集貼白字到字形層 → `source-in` 一次上色（單色填色／原圖色貼每格一像素的色圖）→ 主畫布填背景再疊上
-- （→ §7 數值）可調值的宣告處：`COLS_MIN/MAX`（`convert.ts`）、`FONT_SCALE`（`glyph.ts`）、特效時長與振幅（`effects.ts` 的 `typewriterDur`、`decodeDur`、`wave`、`glitch`）、spike 預設值（`spike/main.ts` `DEFAULTS`）
-- （→ §8 驗證）`npm test`：字寬、轉換、特效、模組邊界共 32 項；部署 workflow（`.github/workflows/pages.yml`）測試沒過就不部署。瀏覽器端（繪製、拖放、手機版面）目前沒有自動化，靠人工或臨時腳本
-- （→ §0 檔案清單）`start.bat`：Windows 一鍵啟動（缺 `node_modules` 先 `npm install`，再 `npm start`）。必須是 CRLF，由 `.gitattributes` 的 `*.bat` 例外保證
-- （→ §8 驗證）`npm start` = `vite --open`；`npm run phone` = `vite --host --open`，讓同網路的手機連進來
-- （→ §0 檔案清單）`src/media/`：編輯器那一側的媒體讀寫，可以用套件。`gif-decode.ts`（`GifSource`、`GifComposer`、`isGif`）用 gifuct-js 解碼；`gif-export.ts`（`exportGif`、`suggestSeconds`）用 gifenc 編碼；`gifenc.d.ts` 補型別
-- （→ §0 檔案清單）`src/player/clip-frames.ts`：`ClipFrames` = Clip 的每一格各一個 `SceneFrames`，依時間挑格
-- （→ §3 資料契約）`Clip = { frames: Grid[], delays: number[] }`，`delays` 毫秒、播完循環；靜態圖用 `stillClip(grid)`（`delays: [Infinity]`）。`ScenePlayer.show` 收的是 Clip
-- （→ §4 模組契約）兩條時間軸：圖層動畫依 `clipIndexAt` 循環；進場特效從畫面開始算，**不會因為圖層換格而重播**
-- （→ §4 模組契約）GIF 讀取逐格解碼、用完即丟：欄數改變才重解一遍，只留每格的 `Sample`。最多取前 `GIF_MAX_FRAMES`（300）格；停留 ≤ 10 ms 當 100 ms（`normalizeDelay`，和瀏覽器一致）；用檔頭 `GIF8` 判斷，不信副檔名；只有一格或解析失敗就退回 `createImageBitmap` 當靜態圖
-- （→ §4 模組契約）`GifComposer`：上一格的 disposal 在下一格貼上**之前**才生效（2 = 清成透明、3 = 還原）；透明像素不覆蓋
-- （→ §4 模組契約）`exportGif`：畫面外的 `Renderer`（`readback: true`、dpr 1）依 `frameDelayMs(fps)`（對齊 1/100 秒）推進時間；全片共用一組 256 色調色盤，從最多 8 個時間點每 5 像素取樣；每 3 格讓出主執行緒一次
-- （→ §4 模組契約）`Renderer`：`setGrid` 只換內容不重排版；色圖依 Grid 用 WeakMap 快取；`fit(maxW, maxH, dpr)` 可指定 dpr
-- （→ §7 數值）`GIF_MAX_FRAMES`（`gif-decode.ts`）；`GIF_MAX_SECONDS`、`SUSTAIN_MIN_SECONDS`、`HOLD_SECONDS`（`gif-export.ts`）
-- （→ §8 驗證）`tests/gif.test.ts`：GIF 疊合規則、gifenc 編→解來回一致、Clip 時間軸、匯出時間設定。瀏覽器端的「上傳動圖 → 播放會動 → 匯出 GIF → 解回來檢查」目前靠臨時腳本
-- （→ §9 刻意沒做的事）GIF 匯出在主執行緒跑，不用 Web Worker —— 720 px、數十格約一秒內完成；要做長片或大尺寸再搬
-- （→ §9 刻意沒做的事）訊息填充模式的動圖：每一格都從句子開頭填起，字會隨亮處移動而流動，不追蹤「同一個字在哪」
-- （→ §8 驗證）`.github/workflows/pages.yml`：PR 跑 `npm test` ＋ `npm run build`（不部署）；推到 `main` 再多做上傳與部署。`concurrency` 依分支分組，PR 的檢查不會取消 `main` 的部署
-- （→ §0 檔案清單）`src/core/project.ts`：專案資料型別（`Project`、四種 node、`EffectSpec`）、`validateProject`、存檔格式（`ProjectFile`）與 `encode*`／`decode*`、`jsonForScript`、`extractProjectFile`。`EffectSpec` 的正本在這裡，`player/effects.ts` 轉出
-- （→ §0 檔案清單）`src/player/flow.ts`（`Flow`：純邏輯的流程推進）、`src/player/app.ts`（`mountPlayer`：DOM、起始畫面、Choice 疊加、End、輸入）、`src/player/main.ts`（匯出檔的進入點）
-- （→ §0 檔案清單）`src/media/export-html.ts`（`buildHtml`）、`src/media/virtual-player.d.ts`；`tools/player-bundle.ts`（`buildPlayer`、`playerBundlePlugin`、`PLAYER_BUDGET_KB`）；`src/spike/demo.ts`（示範訊息、`drawHeart`）
-- （→ §3 資料契約）`ProjectFile = { format: 'unsaid', version: 1, cellAspect, title, nodes }`。Scene 的 `layers` 存成 `ClipFile = { cols, rows, frames: GridFile[], delays? }`；`GridFile = { text: string[]（每列一字串，全形字只寫一次、空格 = 沒字）, alpha?（base64，每格 0～255，全不透明時省略）, colors?（base64 rgb） }`
-- （→ §3 資料契約）node 之間用 `next`（Start、Scene）與 `options[].next`（Choice）連；`null` = 沒接。Scene 的 `advance` 是 `{ mode: 'click' }` 或 `{ mode: 'auto', seconds }`
-- （→ §4 模組契約）`Flow`：`begin()`／`advance()`／`choose(i)` 回傳下一步；`lastScene` 給 Choice 疊加用；壞連結一律走到一個空的 End，不拋錯；Start 被接回來就從頭
-- （→ §4 模組契約）`mountPlayer`：點擊／空白鍵／Enter —— 進場特效沒播完先跳到播完，播完才推進；`auto` 的 Scene 等 `max(seconds, 進場長度)` 自動推進、不吃點擊推進；Choice 時 `ScenePlayer.pause()` 凍結、`.choosing` 變暗；數字鍵選、方向鍵移 focus；End 用打字機排出結尾文字，`replay` 才有「重看」
-- （→ §4 模組契約）匯出 HTML：`<script type="application/json" id="unsaid-data">` ＋ 打包好的播放器（`virtual:unsaid-player`，由 `playerBundlePlugin` 在建置／開發時即時打包）。分頁標題用訊息自己的標題（預設「一則訊息」），不放工具名
-- （→ §4 模組契約）`ScenePlayer` 加了 `elapsed()`、`seek(t)`、`pause()`、`enterDuration()`
-- （→ §7 數值）`PLAYER_BUDGET_KB`（`tools/player-bundle.ts`，目前 40）；`CHOICE_MIN/MAX`、`FORMAT_VERSION`（`core/project.ts`）；`POLL_MS`（`player/app.ts`）
-- （→ §8 驗證）`tests/project.test.ts`（字元格與專案的存讀來回、驗證、`</script>` 跳脫、Flow）；`tests/player-bundle.test.ts`（打包 ≤ 40 KB、只含 core／player、沒有 `</script`）。目前打包 14.8 KB
-- （→ §8 驗證）瀏覽器端的整條流程（spike 預覽走分支一、匯出檔斷網開啟用鍵盤走分支二、手機尺寸）目前靠臨時腳本；**真手機實測要人做**
-- （→ §9 刻意沒做的事）匯出檔的專案資料沒有壓縮 —— 實測 gzip 可縮到約 1/9，但播放器要改成非同步啟動，等 Chiao 看過數字再決定
-- （→ §9 刻意沒做的事）原圖色模式下，波浪／故障的位移不帶著顏色走（色圖固定在格子上）—— 位移不到一格，相鄰色相近，看不出來；要修得逐格上色，200 欄會掉幀
-- （→ §9 刻意沒做的事）輪廓只在密度模式生效 —— 描邊字元插進句子會破壞訊息填充模式的可讀性
+（空 —— 2026-10-18 M3 發 PR 前整併）

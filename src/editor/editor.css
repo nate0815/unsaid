@@ -1,0 +1,362 @@
+:root {
+  --bg: #0b0b0d;
+  --panel: #141418;
+  --line: #26262d;
+  --text: #e8e6e3;
+  --muted: #8b8a90;
+  --accent: #d9b26f;
+  --danger: #e0735f;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+}
+
+.loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+}
+
+.editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'bar bar' 'canvas side' 'status status';
+  height: 100vh;
+  height: 100dvh;
+}
+
+button {
+  background: var(--line);
+  color: var(--text);
+  border: 1px solid #34343d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--accent);
+  color: #1a1408;
+  border-color: var(--accent);
+}
+
+input[type='text'],
+textarea,
+.title {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+textarea {
+  resize: vertical;
+}
+input[type='range'],
+input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+input[type='color'] {
+  width: 40px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 2px;
+}
+
+/* ── 工具列 ── */
+.toolbar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.toolbar .title {
+  width: 200px;
+  font-weight: 600;
+}
+.toolbar .group {
+  display: flex;
+  gap: 6px;
+}
+.toolbar .link {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.toolbar .link:hover {
+  color: var(--accent);
+}
+
+/* ── 畫布 ── */
+.canvas {
+  grid-area: canvas;
+  min-height: 0;
+}
+.react-flow {
+  --xy-background-color: var(--bg);
+}
+
+.fnode {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-width: 140px;
+  max-width: 220px;
+  font-size: 13px;
+}
+.fnode.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(217 178 111 / 0.25);
+}
+.fnode.problem {
+  border-color: var(--danger);
+}
+.fnode-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.fnode-title small {
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+}
+.fnode.start {
+  min-width: 80px;
+  text-align: center;
+  border-radius: 999px;
+}
+.fnode.start .fnode-title {
+  margin: 0;
+}
+.fnode.end {
+  border-style: dashed;
+}
+.fnode-prompt {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fnode-option {
+  position: relative;
+  margin-top: 4px;
+  padding: 3px 12px 3px 6px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+.fnode-option .react-flow__handle {
+  right: -11px;
+}
+.key {
+  display: inline-block;
+  min-width: 1.4em;
+  color: var(--muted);
+}
+.thumb {
+  display: block;
+  margin: 2px auto 0;
+  border-radius: 4px;
+}
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+}
+
+/* ── 屬性面板 ── */
+.inspector {
+  grid-area: side;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  padding: 12px 16px 24px;
+}
+.inspector.empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding-top: 24px;
+}
+.inspector h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--accent);
+}
+.inspector-thumb {
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+.field {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+}
+.field-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.field-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.range {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  gap: 8px;
+  align-items: center;
+}
+.range output {
+  text-align: right;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.seg {
+  display: flex;
+}
+.seg button {
+  flex: 1;
+  border-radius: 0;
+}
+.seg button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.seg button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.seg button.on {
+  background: var(--bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.colors,
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.options {
+  display: grid;
+  gap: 6px;
+}
+.option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+.problem-line {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+/* ── 狀態列 ── */
+.statusbar {
+  grid-area: status;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 12px;
+}
+.statusbar .ok {
+  color: #8fc58f;
+}
+.statusbar .problems {
+  color: var(--danger);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.statusbar .problem {
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--danger);
+  background: transparent;
+  border-color: var(--danger);
+}
+.statusbar .saved {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── 預覽 ── */
+.preview {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.85);
+}
+.preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #000;
+}
+.preview button {
+  justify-self: center;
+}
+
+@media (max-width: 760px) {
+  .editor {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 55vh auto auto;
+    grid-template-areas: 'bar' 'canvas' 'side' 'status';
+    height: auto;
+  }
+  .inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
