@@ -2,7 +2,7 @@
 
 import { Handle, Position, useUpdateNodeInternals, type NodeProps, type Node } from '@xyflow/react'
 import { useEffect } from 'react'
-import { CHOICE_MAX, type ChoiceNode, type EndNode, type FlowNode, type SceneNode } from '../core/project'
+import { CHOICE_MAX, type ChoiceNode, type EndNode, type FlowNode, type SceneNode, type Screen } from '../core/project'
 import { OUT, optHandle } from './graph'
 import { Thumb } from './Thumb'
 
@@ -15,10 +15,15 @@ const cls = (p: NodeProps<RFNode>, kind: string) =>
 
 const firstLine = (s: string, fallback: string) => s.split('\n').find((l) => l.trim())?.trim() || fallback
 
+/** 畫面的縮圖。Scene、Start／End 的畫面共用。 */
+const ScreenThumb = ({ s }: { s: Screen }) => (s.layers[0] ? <Thumb grid={s.layers[0].frames[0]} style={s.style} width={168} height={96} /> : null)
+
 function StartView(p: NodeProps<RFNode>) {
+  const n = p.data.node as FlowNode & { type: 'start' }
   return (
-    <div className={cls(p, 'start')}>
+    <div className={cls(p, n.screen ? 'start has-screen' : 'start')}>
       <div className="fnode-title">開始</div>
+      {n.screen && <ScreenThumb s={n.screen} />}
       <Handle type="source" position={Position.Right} id={OUT} />
     </div>
   )
@@ -36,7 +41,7 @@ function SceneView(p: NodeProps<RFNode>) {
       <div className="fnode-title">
         Scene <small>{label}{n.advance.mode === 'auto' ? `・${n.advance.seconds} 秒` : ''}</small>
       </div>
-      {layer && <Thumb grid={layer.frames[0]} style={n.style} width={168} height={96} />}
+      <ScreenThumb s={n} />
       <Handle type="source" position={Position.Right} id={OUT} />
     </div>
   )
@@ -82,7 +87,7 @@ function EndView(p: NodeProps<RFNode>) {
     <div className={cls(p, 'end')}>
       <Handle type="target" position={Position.Left} />
       <div className="fnode-title">結尾</div>
-      <div className="fnode-prompt">{firstLine(n.text, '（沒有結尾文字）')}</div>
+      {n.screen ? <ScreenThumb s={n.screen} /> : <div className="fnode-prompt">（沒有結尾畫面）</div>}
     </div>
   )
 }

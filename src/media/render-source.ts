@@ -1,8 +1,8 @@
 /* 圖層來源（原圖＋轉換參數）→ 字元畫面（Clip）。編輯器與 spike 頁共用這一支，
  * 「同樣的參數轉出同樣的畫面」才成立。 */
 
-import { adjust, layoutText, outlineChars, sampleImage, toDensity, toMessage, type Sample } from '../core/convert'
-import { emptyGrid, stillClip, type Clip, type Grid } from '../core/grid'
+import { adjust, outlineChars, sampleImage, textGrid, toDensity, toMessage, type Sample } from '../core/convert'
+import { stillClip, type Clip, type Grid } from '../core/grid'
 import { buildInkTable, type InkMeasure } from '../core/ink'
 import { fromBase64, toBase64, type ConvertParams, type LayerSource, type SceneSource } from '../core/project'
 import { GifSource } from './gif-decode'
@@ -27,13 +27,8 @@ export function gridsFromSamples(samples: Sample[], p: ConvertParams, measure: I
   })
 }
 
-/** 純文字圖層：上下各留一列，字才不會貼著畫面邊緣。 */
-export function textGrid(text: string, cols: number): Grid {
-  const body = layoutText(text, cols)
-  const grid = emptyGrid(body.cols, body.rows + 2)
-  grid.cells.splice(body.cols, body.cells.length, ...body.cells)
-  return grid
-}
+/** 純文字圖層的排版搬到 core（存檔格式升級時也要用），這裡轉出，既有的 import 不必改。 */
+export { textGrid }
 
 /** GIF 的每一格各取一份樣本。逐格解碼、用完即丟（見 gif-decode）。 */
 export function gifSamples(gif: GifSource, cols: number): Sample[] {

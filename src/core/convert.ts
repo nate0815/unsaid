@@ -247,3 +247,11 @@ export function layoutText(text: string, cols: number): Grid {
   })
   return grid
 }
+
+/** 純文字圖層：上下各留一列，字才不會貼著畫面邊緣。 */
+export function textGrid(text: string, cols: number): Grid {
+  const body = layoutText(text, cols)
+  const grid = emptyGrid(body.cols, body.rows + 2)
+  grid.cells.splice(body.cols, body.cells.length, ...body.cells)
+  return grid
+}

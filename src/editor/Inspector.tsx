@@ -13,9 +13,12 @@ import {
   type EndNode,
   type FlowNode,
   type SceneNode,
+  type Screen,
+  type StartNode,
+  withScreen,
 } from '../core/project'
 import { sourceFromFile } from '../media/render-source'
-import { addOption, removeOption } from './graph'
+import { addOption, newEndScreen, newStartScreen, removeOption } from './graph'
 import { Thumb } from './Thumb'
 
 type Patch<T> = (fn: (n: T) => T) => void
@@ -54,7 +57,8 @@ const FX_DEFAULT: Record<EffectKind, { speed: number; intensity: number }> = {
   glitch: { speed: 1, intensity: 0.4 },
 }
 
-export function SceneInspector({ node, patch, hideThumb }: { node: SceneNode; patch: Patch<SceneNode>; hideThumb?: boolean }) {
+/** 一個畫面的參數（圖層來源、轉換、顏色、特效）。Scene 與 Start／End 的畫面共用這一份（DESIGN「Node 種類」：規格相同）。 */
+export function ScreenInspector<T extends Screen>({ node, patch, hideThumb }: { node: T; patch: Patch<T>; hideThumb?: boolean }) {
   const file = useRef<HTMLInputElement>(null)
   const src = node.source
   const setParams = (p: Partial<ConvertParams>) =>
@@ -75,7 +79,7 @@ export function SceneInspector({ node, patch, hideThumb }: { node: SceneNode; pa
           <Thumb grid={node.layers[0].frames[0]} style={node.style} width={288} height={180} />
         </div>
       )}
-      {!src && <p className="field-hint">這個 Scene 是從匯出的 HTML 取回的，沒有原圖，只能沿用已轉好的畫面。換一張圖或改成文字就能重新編輯。</p>}
+      {!src && <p className="field-hint">這個畫面是從匯出的 HTML 取回的，沒有原圖，只能沿用已轉好的畫面。換一張圖或改成文字就能重新編輯。</p>}
 
       <Field label="圖層來源">
         <div className="seg">
@@ -173,6 +177,14 @@ export function SceneInspector({ node, patch, hideThumb }: { node: SceneNode; pa
         </div>
       </Field>
 
+    </>
+  )
+}
+
+/** Scene 才有的推進方式。 */
+export function AdvanceFields({ node, patch }: { node: SceneNode; patch: Patch<SceneNode> }) {
+  return (
+    <>
       <Field label="推進方式">
         <div className="seg">
           <button className={node.advance.mode === 'click' ? 'on' : ''} onClick={() => patch((n) => ({ ...n, advance: { mode: 'click' } }))}>
@@ -190,7 +202,36 @@ export function SceneInspector({ node, patch, hideThumb }: { node: SceneNode; pa
   )
 }
 
-function textOf(n: SceneNode): string {
+export function SceneInspector({ node, patch, hideThumb }: { node: SceneNode; patch: Patch<SceneNode>; hideThumb?: boolean }) {
+  return (
+    <>
+      <ScreenInspector node={node} patch={patch} hideThumb={hideThumb} />
+      <AdvanceFields node={node} patch={patch} />
+    </>
+  )
+}
+
+/** Start／End 的畫面：可以不設；設了就跟 Scene 用同一組參數。 */
+function OptionalScreen({ node, patch, label, make }: { node: StartNode | EndNode; patch: Patch<StartNode | EndNode>; label: string; make: () => Screen }) {
+  const screen = node.screen
+  if (!screen)
+    return (
+      <Field label={label} hint="沒有畫面也可以">
+        <button onClick={() => patch((n) => withScreen(n, make()))}>＋ 加上{label}</button>
+      </Field>
+    )
+  return (
+    <>
+      <p className="field-hint">在流程圖上雙擊這個 node，可以打開大的編輯畫面。</p>
+      <ScreenInspector node={screen} patch={(fn) => patch((n) => withScreen(n, fn(n.screen!)))} />
+      <Field label={label}>
+        <button onClick={() => patch((n) => withScreen(n, undefined))}>拿掉{label}</button>
+      </Field>
+    </>
+  )
+}
+
+function textOf(n: Screen): string {
   return n.source?.layer.kind === 'text' ? n.source.layer.text : '新的畫面'
 }
 
@@ -227,9 +268,7 @@ function ChoiceInspector({ node, patch }: { node: ChoiceNode; patch: Patch<Choic
 function EndInspector({ node, patch }: { node: EndNode; patch: Patch<EndNode> }) {
   return (
     <>
-      <Field label="結尾文字" hint="可以空白">
-        <textarea rows={3} value={node.text} onChange={(e) => patch((n) => ({ ...n, text: e.target.value }))} />
-      </Field>
+      <OptionalScreen node={node} patch={patch as Patch<StartNode | EndNode>} label="結尾畫面" make={newEndScreen} />
       <Field label="顯示「重看」">
         <input type="checkbox" checked={node.replay} onChange={(e) => patch((n) => ({ ...n, replay: e.target.checked }))} />
       </Field>
@@ -247,7 +286,12 @@ export function Inspector({ node, problems, patch }: { node: FlowNode | null; pr
       {problems.map((m, i) => (
         <p className="problem-line" key={i}>⚠ {m}</p>
       ))}
-      {node.type === 'start' && <p className="field-hint">訊息從這裡開始。每則訊息恰好一個，不能刪除。</p>}
+      {node.type === 'start' && (
+        <>
+          <p className="field-hint">訊息從這裡開始。每則訊息恰好一個，不能刪除。觀看者一定要點一下才會往下。</p>
+          <OptionalScreen node={node} patch={patch as Patch<StartNode | EndNode>} label="起始畫面" make={newStartScreen} />
+        </>
+      )}
       {node.type === 'scene' && (
         <>
           <p className="field-hint">在流程圖上雙擊這個 Scene，可以打開大的編輯畫面。</p>

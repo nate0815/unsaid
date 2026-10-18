@@ -21,6 +21,8 @@ import {
   encodeProject,
   extractProjectFile,
   validateProject,
+  screenOf,
+  withScreen,
   type FlowNode,
   type Project,
   type SceneSource,
@@ -36,7 +38,9 @@ import {
   edges as projectEdges,
   ensureLayout,
   moveNode,
+  newEndScreen,
   newProject,
+  newStartScreen,
   removeNodes,
   updateNode,
   type AddableType,
@@ -88,22 +92,36 @@ function Editor({ initial }: { initial: Project }) {
 
   /* ── Scene 來源一變就重新轉換 ── */
   // 已經轉換過（或正在轉換）的 source 物件。source 是不可變的：一改就是新物件，所以用物件身分比對就夠。
+  // Scene 與 Start／End 的畫面都算（DESIGN「Node 種類」：規格相同）。
   const rendered = useRef(new WeakSet<SceneSource>())
+  /** 載入的專案已經帶著轉好的圖層，不必重轉。 */
+  const markRendered = (p: Project) => {
+    for (const n of p.nodes) {
+      const src = screenOf(n)?.source
+      if (src) rendered.current.add(src)
+    }
+  }
+  useEffect(() => markRendered(initial), [initial])
   useEffect(() => {
-    for (const n of initial.nodes) if (n.type === 'scene' && n.source) rendered.current.add(n.source)
-  }, [initial])
-  useEffect(() => {
-    const todo = project.nodes.filter((n) => n.type === 'scene' && n.source && !rendered.current.has(n.source))
+    const todo = project.nodes.filter((n) => {
+      const src = screenOf(n)?.source
+      return src && !rendered.current.has(src)
+    })
     if (todo.length === 0) return
     const timer = setTimeout(() => {
       for (const n of todo) {
-        if (n.type !== 'scene' || !n.source) continue
-        const src = n.source
+        const src = screenOf(n)?.source
+        if (!src) continue
         rendered.current.add(src)
         renderSource(src, measure)
           .then((clip) =>
             // 轉換是非同步的：回來時若使用者又改了參數，丟掉這次的結果。
-            setProject((p) => updateNode(p, n.id, (x: FlowNode) => (x.type === 'scene' && x.source === src ? { ...x, layers: [clip] } : x)))
+            setProject((p) =>
+              updateNode(p, n.id, (x: FlowNode) => {
+                const cur = screenOf(x)
+                return cur && cur.source === src ? withScreen(x, { ...cur, layers: [clip] }) : x
+              })
+            )
           )
           .catch((e) => setStatus(`轉換失敗：${e instanceof Error ? e.message : e}`))
       }
@@ -199,7 +217,7 @@ function Editor({ initial }: { initial: Project }) {
       if (!raw) throw new Error('這個檔案裡找不到 Unsaid 的訊息資料')
       if (!confirm('匯入會取代目前的訊息（目前的會被覆蓋）。要繼續嗎？')) return
       const p = ensureLayout(decodeProject(raw))
-      for (const n of p.nodes) if (n.type === 'scene' && n.source) rendered.current.add(n.source)
+      markRendered(p)
       setProject(p)
       setSelected(null)
       setStatus(`已匯入「${f.name}」`)
@@ -212,7 +230,7 @@ function Editor({ initial }: { initial: Project }) {
   const reset = () => {
     if (!confirm('開一則新的訊息？目前的內容會被清掉（要留著就先「下載專案」）。')) return
     const p = newProject()
-    for (const n of p.nodes) if (n.type === 'scene' && n.source) rendered.current.add(n.source)
+    markRendered(p)
     setProject(p)
     setSelected(null)
     setTimeout(() => flow.fitView({ padding: 0.2 }), 50)
@@ -221,6 +239,13 @@ function Editor({ initial }: { initial: Project }) {
   const selectedNode = project.nodes.find((n) => n.id === selected) ?? null
   const patch = (fn: (n: FlowNode) => FlowNode) => selected && setProject((p) => updateNode(p, selected, fn))
   const editingNode = project.nodes.find((n) => n.id === editing) ?? null
+  /** 雙擊：有畫面的 node 打開編輯畫面；Start／End 還沒有畫面就先加一個預設的。Choice 沒有畫面。 */
+  const openEditor = (id: string) => {
+    const n = project.nodes.find((x) => x.id === id)
+    if (!n || n.type === 'choice') return
+    if (!screenOf(n)) setProject((p) => updateNode(p, id, (x: FlowNode) => withScreen(x, x.type === 'start' ? newStartScreen() : newEndScreen())))
+    setEditing(id)
+  }
 
   return (
     <div className="editor">
@@ -256,7 +281,7 @@ function Editor({ initial }: { initial: Project }) {
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onPaneClick={() => setSelected(null)}
-          onNodeDoubleClick={(_, n) => n.type === 'scene' && setEditing(n.id)}
+          onNodeDoubleClick={(_, n) => openEditor(n.id)}
           zoomOnDoubleClick={false}
           deleteKeyCode={['Delete', 'Backspace']}
           defaultEdgeOptions={{ animated: true }}
@@ -289,7 +314,7 @@ function Editor({ initial }: { initial: Project }) {
       </footer>
 
       {preview && <Preview html={preview} onClose={() => setPreview(null)} />}
-      {editingNode?.type === 'scene' && (
+      {editingNode && screenOf(editingNode) && (
         <SceneEditor node={editingNode} patch={(fn) => setProject((p) => updateNode(p, editingNode.id, fn))} onClose={() => setEditing(null)} />
       )}
     </div>
