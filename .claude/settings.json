@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "ask": [
+      "Edit(doc/DESIGN.md)",
+      "Write(doc/DESIGN.md)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.agents/hooks/doc-sync-check.mjs"
+            ],
+            "statusMessage": "檢查文件是否已回填…"
+          }
+        ]
+      }
+    ]
+  }
+}

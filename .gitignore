@@ -1,0 +1,56 @@
+# 個人層的 Claude Code 權限記錄，不該帶給別人。
+.claude/settings.local.json
+
+# 個人層的 Codex 設定（含 hook 信任紀錄）。信任是綁機器的，不該帶給別人。
+.codex/config.local.toml
+.codex/*.local.toml
+
+# 如果有人把 CODEX_HOME 指到專案的 .codex/（探測 hook 時很容易手滑），
+# Codex 會把它當成自己的 home，在裡面生一大包執行期狀態。
+# 這些不是設定，不該進版控，也不該被 cp -r 複製到別人的專案裡。
+.codex/*.sqlite
+.codex/*.sqlite-shm
+.codex/*.sqlite-wal
+.codex/installation_id
+.codex/auth.json
+.codex/.sandbox_migration
+.codex/sessions/
+.codex/shell_snapshots/
+.codex/skills/.system/
+.codex/plugins/
+.codex/tmp/
+.codex/.tmp/
+.codex/cache/
+
+# 規格正本的一次性解鎖手勢。
+# ⚠️ 這個檔**絕對不能進版控** —— 一旦被 commit，Codex 那邊的規格保護就對
+# 所有人、所有時候永久失效了，而且不會有任何症狀。
+doc/.design-unlock
+
+# Obsidian：只排除高頻變動的個人工作區狀態。
+# ⚠️ .obsidian/ 的其他部分要進版控（連結設定、外掛設定、模板設定）——
+# 那些決定了團隊成員產出的連結格式是否一致，排掉會讓每個人的 vault 行為不同。
+doc/.obsidian/workspace.json
+doc/.obsidian/workspace-mobile.json
+doc/.obsidian/cache
+
+# Build 產出物。
+# ⚠️ git 的物件庫是全 repo 共用的 —— 一包 build 被 commit 進來，
+# 就算事後刪掉那個分支，物件仍然留在每個人的 .git 裡，要移除得改寫歷史。
+# 而且膨脹是無聲的：clone 變慢不會有人報錯。
+# 產出物走發佈平台（itch.io／Steam／GitHub Releases），用 tag 跟原始碼對應。
+# 詳見 core/分支與發佈.md「要不要另開 repo 管理？」。
+Build/
+Builds/
+build/
+dist/
+*.apk
+*.aab
+*.ipa
+*.app/
+*.exe
+*.dmg
+
+
+# 相依套件。
+node_modules/

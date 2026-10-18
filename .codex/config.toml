@@ -1,0 +1,44 @@
+# Codex CLI 的專案層設定 —— 對應 Claude Code 的 .claude/settings.json。
+#
+# 兩個 hook 的腳本都在 .agents/hooks/ 底下，跟 Claude Code 共用：
+#   doc-sync-check.mjs  兩邊共用同一支（Stop hook 契約相同）
+#   design-guard.mjs    只有 Codex 需要（Claude 用原生的 permissions.ask）
+#
+# 已用 Codex CLI 0.154.0-alpha.6.2 實測過的部分（2026-09-12）：
+#   ✅ 本檔可被嚴格解析
+#   ✅ .agents/skills/doc-sync 會出現在 model-visible skills 清單 —— 不需要 .codex/skills stub
+#   ✅ design-guard 會擋下 DESIGN 寫入，非目標檔與唯讀 shell 指令正常放行
+#   ✅ doc-sync-check 在 git fixture 中正確擋下與放行
+#
+# ⚠ 仍未實機驗證：${CODEX_PROJECT_DIR} 這個變數是否存在。
+#   當時的 session 無法連到 OpenAI 端點，走不到 Stop 階段。
+#   兩個 hook 都依賴它 —— **不存在的話會無聲失效**，所以這是最優先要驗的一項。
+#   驗法見 setup/CodexCLI環境.md 第 6 節。不存在就改成相對路徑
+#   "node .agents/hooks/<腳本名>.mjs"（hook 子行程的 cwd 若為專案根即可），再不行填絕對路徑。
+
+# ── 收工前檢查文件是否已回填 ──────────────────────────────
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = 'node "${CODEX_PROJECT_DIR}/.agents/hooks/doc-sync-check.mjs"'
+timeout = 30
+statusMessage = "檢查文件是否已回填…"
+
+# ── 規格正本的寫入保護（Codex 版的「權威層」）──────────────
+# Claude Code 在這一層用 permissions.ask 跳框問人；Codex 的 PreToolUse
+# 只支援 allow/deny（"ask" 官方標示 parsed but not supported yet），
+# 所以改用「硬擋 ＋ doc/.design-unlock 解鎖檔」。理由見 design-guard.mjs 檔頭。
+# ⚠️ matcher 用 `.*` 全收，不要改成列舉工具名。
+# 2026-09-12 踩過一次：原本寫 "apply_patch|edit|write|shell"，但這版 CLI 實際的
+# 命令工具叫 `exec_command` —— matcher 先把它濾掉，design-guard 根本不會被呼叫，
+# 於是用 shell 改 DESIGN.md 完全擋不到，而且**沒有任何症狀**。
+# 工具名會跨版本改，列舉一定會再漏一次。過濾責任放在腳本裡（它比對不到就立刻放行）。
+[[hooks.PreToolUse]]
+matcher = ".*"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = 'node "${CODEX_PROJECT_DIR}/.agents/hooks/design-guard.mjs"'
+timeout = 10
+statusMessage = "檢查是否動到規格正本…"
