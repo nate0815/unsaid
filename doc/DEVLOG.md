@@ -114,7 +114,7 @@ grep -rln "type: gotcha" doc/gotchas/          # 全部踩坑
 | 負責人 | Chiao |
 | 產出形式 | 放在 GitHub Pages 的網頁工具；製作者匯出單一 HTML 檔給觀看者 |
 | 驗收標準 | 見 [PLAN.md](PLAN.md) §10 |
-| 工作目錄 | `D:\2026_Practice\產生器`（GitHub repo 名 `unsaid`） |
+| 工作目錄 | `D:\2026_Practice\unsaid`（GitHub repo [nate0815/unsaid](https://github.com/nate0815/unsaid)） |
 | 規格正本 | [DESIGN.md](DESIGN.md) |
 
 > ⚠️ 「驗收標準」欄位在動工前務必填掉。最常見的失敗不是做不出來，
@@ -142,6 +142,9 @@ grep -rln "type: gotcha" doc/gotchas/          # 全部踩坑
 | Svelte ＋ Svelte Flow | ❌ | 可行，但生態較小 | 同上 |
 | Godot／Unity 網頁匯出 | ❌ | 執行檔大、載入慢，與「小 HTML 檔」衝突 | —— |
 | Canvas 2D 繪製字元 | ✅ 採用 | 逐格特效、大量字元；DOM 文字做不到 | —— |
+| 字形層 ＋ `source-in` 一次上色 | ✅ 採用 | 200 欄×88 列、3000 字、波浪＋故障全開，每幀約 6 ms | [Canvas繪製-逐格放字-字形層一次上色](decisions/2026-10-18-Canvas繪製-逐格放字-字形層一次上色.md) |
+| 逐格設 `fillStyle` ＋ `fillText` | ❌ | 原圖色模式每格一次狀態切換，數千格預期會掉幀（**未實測**，是推估） | 同上 |
+| 字元格高寬比由字型量測 | ❌ | 各裝置字型不同 → 圖在對方那邊變形 | [字元格高寬比固定為2](decisions/2026-10-18-字元格高寬比固定為2.md) |
 
 ---
 

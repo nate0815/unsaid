@@ -33,10 +33,11 @@
 > 但**不要把同一段指令與判準抄成兩份**：抄了就會分岔，而分岔不會有任何工具報錯。
 
 ```bash
-<一到三行指令>
+npm test          # 單元測試＋模組邊界檢查
+npm run build     # 型別檢查＋建置
 ```
 
-看到 <什麼> 就是正常。
+兩行都沒有紅字（`Tests ... passed`、`✓ built`）就是正常。要看畫面：`npm run dev`，瀏覽器開它印出的網址，預設會看到一顆由那句話填成的心。
 
 ---
 
@@ -76,7 +77,13 @@
 
 | # | 不變式 | 保護哪個檔／符號 | 破壞後的症狀 |
 |---|---|---|---|
-| 1 | | | |
+| 1 | **字元格高寬比是常數 `CELL_ASPECT`（= 2），不得改由字型量測** | `src/core/grid.ts` `CELL_ASPECT`；用到它的 `rowsFor`、`outlineChars`、`drawGlyph`、`Renderer.fit` | 換一台字型不同的裝置，圖就被壓扁或拉長；本機看起來完全正常 |
+| 2 | **每個字畫進自己的格子（`drawGlyph`），絕不把一整列當字串 `fillText`** | `src/core/glyph.ts` `drawGlyph`、`src/player/renderer.ts` `Renderer.draw` | 對方字型的中文寬度不是半形的整兩倍時，整列逐漸錯位，訊息填充模式的句子讀不出來 |
+| 3 | **全形字恆為 `w:2` 左半 ＋ 緊接一格 `w:0` 右半，且不跨列**。只透過 `putChar` 寫格子 | `src/core/grid.ts` `putChar`、`findBrokenWide` | 半個字被畫出、右半格被當空格塞進別的字，畫面疊字；不會報錯 |
+| 4 | **特效不得改變字寬類別**：亂碼要用同寬的字（`noiseChar(w)`）；`w:0` 右半格的位移要跟左半格一致 | `src/player/effects.ts` `noiseChar`、`wave`、`glitch` | 解碼／故障期間字疊在一起或裂成兩半，特效結束後又恢復，很難重現 |
+| 5 | **墨量量測與字形圖集共用同一支 `drawGlyph`** | `src/core/ink.ts` `canvasInkMeasure`、`src/player/renderer.ts` `Atlas.get` | 密度模式排出來的亮暗順序和畫面上看到的不一樣，圖變「髒」，看不出原因 |
+| 6 | **圖集的格寬必須等於 `draw()` 用的格寬**（都從 `canvas.width / cols` 算） | `src/player/renderer.ts` `fit`、`Atlas.reset` | 字微微被裁切或糊掉，在某些視窗大小才出現 |
+| 7 | **`core/` 只 import `core/`；`player/` 只 import `core/`、`player/`；兩者都不准有套件相依** | `src/core/**`、`src/player/**`；由 `tests/boundaries.test.ts` 把關 | 播放器整份內嵌進匯出檔時跟著帶進相依，匯出檔變肥、預覽與成品開始不一致 |
 
 > **「保護哪個檔／符號」這一欄不要留白。** AI 犯「架構與既有慣例不一致」的錯，
 > 是在**讀程式碼**的時候犯的，不是在讀這一節的時候。填了這欄，它動那個檔之前
@@ -145,4 +152,16 @@
 
 ### 10.2 目前收件匣
 
-（空）
+- （→ §0 檔案清單）`src/core/`：`width.ts` 字寬表與 `splitChars`；`grid.ts` 字元格型別、`CELL_ASPECT`、`putChar`；`glyph.ts` 單字繪製與字型堆疊；`ink.ts` 墨量表；`convert.ts` 取樣、亮度調整、輪廓、密度模式、訊息填充模式、純文字排版
+- （→ §0 檔案清單）`src/player/`：`effects.ts` 特效與 `SceneFrames`；`renderer.ts` Canvas 2D ＋ 字形圖集；`scene-player.ts` 單一畫面的 rAF 迴圈
+- （→ §0 檔案清單）`src/spike/`：M1 試作頁（原生 DOM），`index.html` 目前就是這頁；M3 會換成 React 編輯器
+- （→ §3 資料契約）`Grid = { cols, rows, cells: Cell[], colors?: Uint8ClampedArray }`，`cells` 逐列、長度恆為 cols×rows；`Cell = { ch, w: 0|1|2, a }`，`a` 是明顯程度 0～1；`colors` 每格 r,g,b
+- （→ §4 模組契約）轉換分兩段：`sampleImage`（碰瀏覽器，縮成每格一像素）→ 其餘皆純函式（`adjust`、`toDensity`、`toMessage`、`outlineChars`、`layoutText`），可在 node 測
+- （→ §4 模組契約）亮度慣例是「深色背景、亮字」：亮處墨量多／字明顯，要反過來用 `invert`
+- （→ §4 模組契約）`toMessage`：亮度低於門檻的格子留空且不消耗字；全形字落在列尾放不下就留空、字留給下一格；話用完從頭循環；空白收成一個半形空格
+- （→ §4 模組契約）`SceneFrames.frame(t)` 回傳的陣列每幀重用，呼叫端不能留著；特效疊加規則：`a` 相乘、`dx/dy` 相加、`ch` 後者覆蓋
+- （→ §4 模組契約）`Renderer` 每幀：圖集貼白字到字形層 → `source-in` 一次上色（單色填色／原圖色貼每格一像素的色圖）→ 主畫布填背景再疊上
+- （→ §7 數值）可調值的宣告處：`COLS_MIN/MAX`（`convert.ts`）、`FONT_SCALE`（`glyph.ts`）、特效時長與振幅（`effects.ts` 的 `typewriterDur`、`decodeDur`、`wave`、`glitch`）、spike 預設值（`spike/main.ts` `DEFAULTS`）
+- （→ §8 驗證）`npm test`：字寬、轉換、特效、模組邊界共 32 項；部署 workflow（`.github/workflows/pages.yml`）測試沒過就不部署。瀏覽器端（繪製、拖放、手機版面）目前沒有自動化，靠人工或臨時腳本
+- （→ §9 刻意沒做的事）原圖色模式下，波浪／故障的位移不帶著顏色走（色圖固定在格子上）—— 位移不到一格，相鄰色相近，看不出來；要修得逐格上色，200 欄會掉幀
+- （→ §9 刻意沒做的事）輪廓只在密度模式生效 —— 描邊字元插進句子會破壞訊息填充模式的可讀性
