@@ -23,9 +23,12 @@ function imports(file: string): string[] {
   return [...src.matchAll(re)].map((m) => m[1] ?? m[2] ?? m[3])
 }
 
-const allowed: Record<string, string[]> = {
-  core: ['core'],
-  player: ['core', 'player'],
+/** 各模組可以 import 哪些模組、能不能用套件。editor／spike 不列 —— 它們可以用任何東西。 */
+const allowed: Record<string, { mods: string[]; packages: boolean }> = {
+  core: { mods: ['core'], packages: false },
+  player: { mods: ['core', 'player'], packages: false },
+  // media 是編輯器那一側的匯出入，可以用套件；但不能反過來依賴編輯器或 spike 的畫面程式。
+  media: { mods: ['core', 'player', 'media'], packages: true },
 }
 
 describe('模組邊界', () => {
@@ -33,14 +36,17 @@ describe('模組邊界', () => {
     expect(imports(join(SRC, 'player/renderer.ts')).length).toBeGreaterThan(0)
   })
 
-  for (const [mod, ok] of Object.entries(allowed)) {
-    it(`${mod}/ 只 import ${ok.join('、')}，而且沒有任何套件相依`, () => {
+  for (const [mod, rule] of Object.entries(allowed)) {
+    it(`${mod}/ 只 import ${rule.mods.join('、')}${rule.packages ? '（可用套件）' : '，而且沒有任何套件相依'}`, () => {
       for (const f of files(join(SRC, mod))) {
         for (const spec of imports(f)) {
           const where = `${relative(SRC, f)} → ${spec}`
-          expect(spec.startsWith('.'), `不准 import 套件：${where}`).toBe(true)
+          if (!spec.startsWith('.')) {
+            expect(rule.packages, `不准 import 套件：${where}`).toBe(true)
+            continue
+          }
           const target = relative(SRC, resolve(dirname(f), spec)).split(/[\\/]/)[0]
-          expect(ok, `越界 import：${where}`).toContain(target)
+          expect(rule.mods, `越界 import：${where}`).toContain(target)
         }
       }
     })

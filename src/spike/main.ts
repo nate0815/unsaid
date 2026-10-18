@@ -4,9 +4,10 @@
  * 但它畫面用的是正式的 core 與 player —— spike 裡看到的就是之後播放器會畫出來的樣子。
  */
 
-import { adjust, COLS_MAX, COLS_MIN, layoutText, outlineChars, sampleImage, toDensity, toMessage, type Sample } from '../core/convert'
-import { clipDuration, emptyGrid, stillClip, type Clip, type Grid } from '../core/grid'
-import { buildInkTable, canvasInkMeasure } from '../core/ink'
+import { COLS_MAX, COLS_MIN, sampleImage, type Sample } from '../core/convert'
+import { clipDuration, emptyGrid, stillClip, type Clip } from '../core/grid'
+import { canvasInkMeasure } from '../core/ink'
+import { gifSamples, gridsFromSamples, textGrid } from '../media/render-source'
 import { GifSource, isGif } from '../media/gif-decode'
 import { exportGif, GIF_MAX_SECONDS, suggestSeconds } from '../media/gif-export'
 import type { EffectKind, EffectSpec } from '../player/effects'
@@ -158,45 +159,15 @@ function getSamples(): Sample[] {
   if (source.kind === 'still') {
     samples = [sampleImage(source.img, source.w, source.h, state.cols)]
   } else {
-    const { gif } = source
-    const frame = document.createElement('canvas')
-    frame.width = gif.width
-    frame.height = gif.height
-    const ctx = frame.getContext('2d')!
-    samples = []
-    gif.forEachFrame((rgba) => {
-      ctx.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, gif.width, gif.height), 0, 0)
-      samples.push(sampleImage(frame, gif.width, gif.height, state.cols))
-    })
+    samples = gifSamples(source.gif, state.cols)
   }
   sampleCache = { cols: state.cols, samples }
   return samples
 }
 
-function textGrid(): Grid {
-  const body = layoutText(state.text, state.cols)
-  // 上下各留一列，字才不會貼著畫面邊緣。
-  const grid = emptyGrid(body.cols, body.rows + 2)
-  grid.cells.splice(body.cols, body.cells.length, ...body.cells)
-  return grid
-}
-
 function buildClip(): Clip {
-  if (state.source === 'text') return stillClip(textGrid())
-  const samples = getSamples()
-  const table = state.mode === 'density' ? buildInkTable(state.charset, measure) : []
-  const frames = samples.map((s) => {
-    const lum = adjust(s.lum, state)
-    let grid: Grid
-    if (state.mode === 'density') {
-      const outline = state.outline ? outlineChars(lum, s.cols, s.rows, state.outlineThreshold) : undefined
-      grid = toDensity(lum, s.cols, s.rows, table, { outline })
-    } else {
-      grid = toMessage(lum, s.cols, s.rows, state.message, state)
-    }
-    grid.colors = s.rgb
-    return grid
-  })
+  if (state.source === 'text') return stillClip(textGrid(state.text, state.cols))
+  const frames = gridsFromSamples(getSamples(), state, measure)
   return source.kind === 'gif' ? { frames, delays: source.gif.delays.slice() } : stillClip(frames[0])
 }
 
