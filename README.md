@@ -26,7 +26,8 @@ npm start          # 等同 npm run dev，但會自動開瀏覽器
 這會讓同一個網路裡的其他裝置也連得到，用完記得關掉。
 把自己的圖拖進畫面，或用左邊的拉桿調參數。
 
-推到 `main` 會自動測試、建置並部署到 GitHub Pages（`.github/workflows/pages.yml`）。
+**線上版**：https://nate0815.github.io/unsaid/ —— 推到 `main` 會自動測試、建置並部署（`.github/workflows/pages.yml`）；
+開 PR 時只跑測試與建置，當作合併前的檢查。
 
 ---
 

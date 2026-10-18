@@ -1,10 +1,13 @@
-# 推到 main 就建置並部署到 GitHub Pages。dist/ 不進 git（AGENTS.md「護欄」），由這裡從原始碼建。
-# 第一次用要在 repo 的 Settings → Pages 把 Source 設成「GitHub Actions」。
-name: Deploy to GitHub Pages
+# PR：只跑測試與建置，當作合併前的檢查。
+# 推到 main：測試、建置、部署到 GitHub Pages（https://nate0815.github.io/unsaid/）。
+# dist/ 不進 git（AGENTS.md「護欄」），由這裡從原始碼建。
+# Pages 的 Source 已設為「GitHub Actions」（2026-10-18）；換 repo 要重設。
+name: Test & Deploy
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -12,8 +15,9 @@ permissions:
   pages: write
   id-token: write
 
+# 依分支分組：PR 的檢查不會把 main 正在跑的部署取消掉。
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,11 +33,14 @@ jobs:
       # 測試沒過就不部署 —— 壞掉的版本不該被別人看到。
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
+    # PR 只檢查不部署：Pages 只認 main，從 PR 部署會被環境保護規則擋下。
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
