@@ -3,12 +3,10 @@
  * 匯出檔與編輯器預覽都跑這一份（PLAN「核心判斷」）。**零相依**：只能用 core 與 player。
  * 所有 DOM 與樣式都由這裡自己建，匯出範本只要給一個空的 <body>。 */
 
-import { layoutText } from '../core/convert'
 import { FONT_FAMILY } from '../core/glyph'
 import { emptyGrid, stillClip, type Clip } from '../core/grid'
-import type { ChoiceNode, EndNode, Project, SceneNode, SceneStyle } from '../core/project'
+import type { ChoiceNode, EndNode, Project, SceneNode, SceneStyle, Screen } from '../core/project'
 import { Flow, type Step } from './flow'
-import { charWidth, splitChars } from '../core/width'
 import { ScenePlayer } from './scene-player'
 
 const DEFAULT_STYLE: SceneStyle = { fg: '#f1e7d8', bg: '#0b0b0d', useColors: false }
@@ -34,6 +32,7 @@ const CSS = `
 .u-start{position:absolute;inset:0;display:grid;place-items:center;border:0;background:transparent;
   color:inherit;font:inherit;font-size:clamp(16px,4vw,22px);letter-spacing:.2em;cursor:pointer}
 .u-start span{animation:u-breathe 2.4s ease-in-out infinite}
+.u-start.has-screen{place-items:end center;padding-bottom:calc(28px + env(safe-area-inset-bottom));font-size:clamp(13px,3.2vw,16px)}
 /* 有設 display 的元素，hidden 屬性會被蓋掉 —— 一律補這條，否則「點一下開始」會一直留在畫面上。 */
 .u-root [hidden]{display:none!important}
 .u-hint{position:absolute;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));opacity:0;transition:opacity .4s;
@@ -50,16 +49,8 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, tex
   return e
 }
 
-/** End 的結尾文字排成字元畫面：欄數依最長一行決定，上下留白。 */
-function endClip(text: string): Clip {
-  const lines = text.split(/\r?\n/)
-  const widest = Math.max(0, ...lines.map((l) => splitChars(l).reduce((s, ch) => s + charWidth(ch), 0)))
-  const cols = Math.min(60, Math.max(16, widest + 6))
-  const body = layoutText(text, cols)
-  const grid = emptyGrid(cols, body.rows + 4)
-  grid.cells.splice(cols * 2, body.cells.length, ...body.cells)
-  return stillClip(grid)
-}
+/** 沒有畫面時（Start／End 沒設、Choice 前面沒有 Scene）用的空白畫面。 */
+const BLANK: Clip = stillClip(emptyGrid(40, 20))
 
 export function mountPlayer(host: HTMLElement, project: Project): void {
   const style = document.createElement('style')
@@ -115,10 +106,14 @@ export function mountPlayer(host: HTMLElement, project: Project): void {
     else showEnd(s.node)
   }
 
+  const showScreen = (s: Screen) => {
+    applyColors(s.style)
+    player.show(s.layers[0] ?? BLANK, s.effects, s.style, true)
+  }
+
   const showScene = (n: SceneNode) => {
     setMode('scene')
-    applyColors(n.style)
-    player.show(n.layers[0], n.effects, n.style, true)
+    showScreen(n)
   }
 
   const showChoice = (n: ChoiceNode) => {
@@ -127,7 +122,7 @@ export function mountPlayer(host: HTMLElement, project: Project): void {
       // 疊在上一個 Scene 上：停在當下那一格（DESIGN「Node 種類」）。
       player.pause()
     } else {
-      player.show(stillClip(emptyGrid(40, 20)), [], DEFAULT_STYLE, true)
+      player.show(BLANK, [], DEFAULT_STYLE, true)
     }
     prompt.textContent = n.prompt
     options.replaceChildren()
@@ -146,9 +141,13 @@ export function mountPlayer(host: HTMLElement, project: Project): void {
 
   const showEnd = (n: EndNode) => {
     setMode('end')
-    const s = flow.lastScene?.style ?? DEFAULT_STYLE
-    applyColors(s)
-    player.show(endClip(n.text), [{ kind: 'typewriter', speed: 1.5, intensity: 0.4 }], { ...s, useColors: false }, true)
+    if (n.screen) showScreen(n.screen)
+    else {
+      // 沒有結尾畫面：空白，背景沿用最後一個 Scene，畫面才不會突然換色。
+      const s = flow.lastScene?.style ?? DEFAULT_STYLE
+      applyColors(s)
+      player.show(BLANK, [], s, true)
+    }
     replayBtn.hidden = !n.replay
   }
 
@@ -209,7 +208,13 @@ export function mountPlayer(host: HTMLElement, project: Project): void {
     }
   }, POLL_MS)
 
+  // 起始畫面：Start 的畫面在背後播，「點一下開始」移到下方（DESIGN「播放器呈現」）。一定要點一下才往下。
   setMode('start')
+  const startNode = project.nodes.find((n) => n.type === 'start')
+  if (startNode?.type === 'start' && startNode.screen) {
+    start.classList.add('has-screen')
+    showScreen(startNode.screen)
+  }
 }
 
 /** 載入失敗時在畫面上講清楚，而不是一片黑。 */

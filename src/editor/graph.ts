@@ -3,18 +3,19 @@
  * 連線就是改 node 的 `next`（Start、Scene）或 `options[i].next`（Choice）。
  * 每個出口最多一條線 —— 接新的就取代舊的（DESIGN「Node 種類」：一個出口接到一個東西）。 */
 
-import { stillClip } from '../core/grid'
 import {
   CHOICE_MAX,
   CHOICE_MIN,
-  DEFAULT_PARAMS,
+  TEXT_STYLE,
+  textScreen,
   type ChoiceNode,
+  type EffectSpec,
   type EndNode,
   type FlowNode,
   type Project,
   type SceneNode,
+  type Screen,
 } from '../core/project'
-import { textGrid } from '../media/render-source'
 
 export type AddableType = 'scene' | 'choice' | 'end'
 export type Pos = { x: number; y: number }
@@ -37,18 +38,20 @@ export function newId(type: string): string {
 }
 
 export function newScene(id: string, text: string): SceneNode {
-  const params = { ...DEFAULT_PARAMS, cols: 36 }
   return {
     id,
     type: 'scene',
-    layers: [stillClip(textGrid(text, params.cols))],
-    style: { fg: '#f1e7d8', bg: '#0b0b0d', useColors: true },
-    effects: [{ kind: 'decode', speed: 1, intensity: 0.8 }],
+    ...textScreen(text, [{ kind: 'decode', speed: 1, intensity: 0.8 }], { ...TEXT_STYLE, useColors: true }),
     advance: { mode: 'click' },
     next: null,
-    source: { layer: { kind: 'text', text }, params },
   }
 }
+
+/** 結尾畫面的預設：文字＋打字機（沿用 v0.5 之前結尾固定的樣子）。 */
+const END_EFFECTS: EffectSpec[] = [{ kind: 'typewriter', speed: 1.5, intensity: 0.4 }]
+export const newEndScreen = (text = '謝謝你看完。'): Screen => textScreen(text, END_EFFECTS)
+/** 起始畫面的預設：文字＋解碼。 */
+export const newStartScreen = (text = '有一些話想給你看。'): Screen => textScreen(text, [{ kind: 'decode', speed: 1, intensity: 0.8 }])
 
 function newNode(type: AddableType, id: string): FlowNode {
   if (type === 'scene') return newScene(id, '新的畫面')
@@ -56,7 +59,7 @@ function newNode(type: AddableType, id: string): FlowNode {
     const c: ChoiceNode = { id, type: 'choice', prompt: '', options: [{ label: '是', next: null }, { label: '否', next: null }] }
     return c
   }
-  const e: EndNode = { id, type: 'end', text: '', replay: true }
+  const e: EndNode = { id, type: 'end', screen: newEndScreen(), replay: true }
   return e
 }
 
@@ -69,7 +72,7 @@ export function newProject(): Project {
     nodes: [
       { id: 'start', type: 'start', next: 'scene-1' },
       scene,
-      { id: 'end-1', type: 'end', text: '謝謝你看完。', replay: true },
+      { id: 'end-1', type: 'end', screen: newEndScreen(), replay: true },
     ],
     layout: { start: { x: 0, y: 120 }, 'scene-1': { x: 220, y: 60 }, 'end-1': { x: 560, y: 120 } },
   }
